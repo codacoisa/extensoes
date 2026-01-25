@@ -6,8 +6,8 @@
 // @description  Bloqueia scripts externos por host usando chave estável (origin+pathname).
 // @author       lourencosv (GPT)
 // @license      CC BY-NC 4.0
-// @updateURL    https://gist.githubusercontent.com/lourencosv//raw/script-manager-do-site.user.js
-// @downloadURL  https://gist.githubusercontent.com/lourencosv//raw/script-manager-do-site.user.js
+// @updateURL    https://gist.githubusercontent.com/lourencosv/e934f6ab104b03a007418a7bb18e36f5/raw/script-manager-do-site.user.js
+// @downloadURL  https://gist.githubusercontent.com/lourencosv/e934f6ab104b03a007418a7bb18e36f5/raw/script-manager-do-site.user.js
 // @match        http://*/*
 // @match        https://*/*
 // @match        file://*/*
