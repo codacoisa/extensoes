@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Script Manager do Site
 // @namespace    script-manager-do-site.user.js
-// @version      0.5
+// @version      0.6
 // @icon         https://img.icons8.com/?size=100&id=LXhpSVCU82mF&format=png&color=000000
 // @description  Bloqueia scripts externos por host usando chave estável (origin+pathname).
 // @author       lourencosv (GPT)
@@ -21,19 +21,20 @@
 (() => {
   'use strict';
 
-  // =========================
-  // Contexto
-  // =========================
+  // Evita double-run no mesmo documento (por reloads parciais/bugs de injeção)
+  if (window.__VINI_SM_LOADED__) return;
+  window.__VINI_SM_LOADED__ = true;
+
   const HOST = location.hostname || '(sem-host)';
+
+  const IS_TOP = (() => {
+    try { return window.top === window.self; } catch { return true; }
+  })();
 
   // =========================
   // Storage
   // =========================
-  // Por-host: Set de chaves estáveis de script bloqueado
   const SITE_KEY = (host) => `blockedScripts:${host}`;
-
-  // Índice global: { host: [scriptKey...] }
-  // Necessário porque o TM não permite enumerar todas as chaves do storage.
   const INDEX_KEY = 'blockedIndex';
 
   function loadIndex() {
@@ -55,27 +56,20 @@
     try { return new Set(JSON.parse(raw)); } catch { return new Set(); }
   }
 
-  // Salva por-host e sincroniza o índice global (para o painel global)
   function saveBlockedForHost(host, set) {
     GM_setValue(SITE_KEY(host), JSON.stringify([...set]));
-
     const index = loadIndex();
     const arr = [...set];
-
     if (arr.length === 0) delete index[host];
     else index[host] = arr;
-
     saveIndex(index);
   }
 
-  // Cache local (host atual)
   let blocked = loadBlockedForHost(HOST);
 
   // =========================
   // Normalização / chaves
   // =========================
-  // Chave estável para sobreviver a cache-busters (?v=..., #...)
-  // Ex.: https://cdn.x.com/script.js?v=123 -> https://cdn.x.com/script.js
   function srcKey(src) {
     try {
       const u = new URL(src, location.href);
@@ -86,11 +80,9 @@
   }
 
   function fullHref(src) {
-    try { return new URL(src, location.href).href; }
-    catch { return String(src || '').trim(); }
+    try { return new URL(src, location.href).href; } catch { return String(src || '').trim(); }
   }
 
-  // Hash simples (dedupe para inline; inline é só visualização)
   function hash(str) {
     let h = 2166136261;
     for (let i = 0; i < str.length; i++) {
@@ -105,7 +97,6 @@
     if (src) {
       return { kind: 'external', href: fullHref(src), key: srcKey(src) };
     }
-
     const code = (el.textContent || '').trim();
     const preview = code.slice(0, 200).replace(/\s+/g, ' ');
     const id = `inline:${hash(code)}:${preview.slice(0, 40)}`;
@@ -118,7 +109,6 @@
     return blocked.has(srcKey(src));
   }
 
-  // Neutraliza execução (best effort): tipo inválido + remoção
   function neutralizeScript(el) {
     try {
       el.type = 'text/plain';
@@ -128,9 +118,8 @@
   }
 
   // =========================
-  // Bloqueio: inserções dinâmicas
+  // Bloqueio: interceptors
   // =========================
-  // Pega scripts adicionados via appendChild/insertBefore.
   function installInterceptors() {
     const origAppendChild = Node.prototype.appendChild;
     const origInsertBefore = Node.prototype.insertBefore;
@@ -139,7 +128,7 @@
       try {
         if (node && node.tagName === 'SCRIPT' && isBlockedScriptElement(node)) {
           neutralizeScript(node);
-          return node; // finge sucesso para não quebrar o chamador
+          return node;
         }
       } catch {}
       return null;
@@ -159,20 +148,15 @@
   }
 
   // =========================
-  // Bloqueio: observer (parsing/carga)
+  // Bloqueio: MutationObserver
   // =========================
-  // Tenta capturar scripts que entram no DOM durante carregamento/parsing.
-  // Não é garantido para "parser-inserted" que executa imediatamente, mas ajuda muito para async/defer e injeções rápidas.
   function installMutationBlocker() {
     const tryBlockNode = (node) => {
       if (!node) return;
-
       if (node.tagName === 'SCRIPT' && isBlockedScriptElement(node)) {
         neutralizeScript(node);
         return;
       }
-
-      // Caso adicionem fragmentos contendo scripts
       if (node.querySelectorAll) {
         const scripts = node.querySelectorAll('script[src]');
         for (const s of scripts) {
@@ -190,8 +174,6 @@
     const start = () => {
       const root = document.documentElement || document;
       obs.observe(root, { childList: true, subtree: true });
-
-      // Tenta bloquear scripts já presentes (ajuda com defer/async)
       try {
         document.querySelectorAll('script[src]').forEach(s => {
           if (isBlockedScriptElement(s)) neutralizeScript(s);
@@ -208,37 +190,75 @@
   installInterceptors();
   installMutationBlocker();
 
+  // Se estiver dentro de iframe/frame: mantém bloqueio, mas não registra UI/menu (evita duplicação)
+  if (!IS_TOP) return;
+
   // =========================
-  // UI helpers
+  // UI (CLEAN/LIGHT)
   // =========================
   function ensureStyles() {
     GM_addStyle(`
-      #vini-sm-overlay{position:fixed; inset:0; z-index:2147483647; background:rgba(0,0,0,.35);}
-      #vini-sm-panel{position:fixed; top:10vh; left:50%; transform:translateX(-50%);
-        width:min(980px, 92vw); max-height:80vh; overflow:auto;
-        background:#0b0b0b; color:#eee; border:1px solid #333; border-radius:14px;
-        box-shadow:0 12px 40px rgba(0,0,0,.45); padding:12px;
-        font:12px/1.35 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
-      #vini-sm-head{display:flex; gap:10px; align-items:center; justify-content:space-between; margin-bottom:10px;}
-      #vini-sm-title{font-size:13px; font-weight:600;}
-      #vini-sm-close{cursor:pointer; padding:6px 10px; border-radius:10px; border:1px solid #333; background:#151515; color:#eee;}
-      #vini-sm-search{width:100%; box-sizing:border-box; margin:6px 0 10px; padding:7px 9px; border-radius:10px; border:1px solid #333; background:#111; color:#eee;}
-      .vini-sm-row{border-top:1px solid #222; padding:8px 0;}
-      .vini-sm-row:first-of-type{border-top:none;}
-      .vini-sm-src{word-break:break-all; color:#cfcfcf;}
-      .vini-sm-meta{opacity:.8; margin-top:4px;}
-      .vini-sm-actions{margin-top:6px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
-      .vini-sm-toggle{cursor:pointer; padding:4px 8px; border-radius:10px; border:1px solid #333; background:#151515; color:#eee;}
-      .vini-sm-warn{color:#ffcc66; margin-top:6px; opacity:.95;}
-      .vini-sm-small{font-size:11px; opacity:.85;}
-      .vini-sm-pill{display:inline-block; padding:2px 8px; border:1px solid #333; border-radius:999px; background:#111; font-size:11px; opacity:.9;}
-      .vini-sm-grid{display:grid; grid-template-columns: 1fr auto; gap:8px; align-items:start;}
+      :root{
+        --sm-bg:#f7f7f8; --sm-surface:#fff; --sm-text:#111827; --sm-muted:#6b7280;
+        --sm-border:#e5e7eb; --sm-shadow:0 18px 60px rgba(17,24,39,.18);
+        --sm-focus:rgba(59,130,246,.25); --sm-accent:#2563eb; --sm-accent-weak:rgba(37,99,235,.10);
+        --sm-warn:#b45309; --sm-warn-weak:rgba(245,158,11,.18);
+        --sm-danger:#b91c1c; --sm-danger-weak:rgba(239,68,68,.12);
+        --sm-radius:14px; --sm-radius-sm:10px;
+        --sm-font:12.5px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      }
+      #vini-sm-overlay{position:fixed; inset:0; z-index:2147483647; background:rgba(17,24,39,.35); backdrop-filter:blur(2px);}
+      #vini-sm-panel{
+        position:fixed; top:8vh; left:50%; transform:translateX(-50%);
+        width:min(980px,94vw); max-height:84vh; overflow:auto;
+        background:var(--sm-surface); color:var(--sm-text);
+        border:1px solid var(--sm-border); border-radius:var(--sm-radius);
+        box-shadow:var(--sm-shadow); padding:14px; font:var(--sm-font);
+      }
+      #vini-sm-head{position:sticky; top:0; background:var(--sm-surface); padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid var(--sm-border); z-index:2;}
+      .vini-sm-headbar{display:flex; gap:10px; align-items:center; justify-content:space-between;}
+      #vini-sm-title{font-size:13px; font-weight:650; letter-spacing:.2px;}
+      .vini-sm-sub{margin-top:6px; color:var(--sm-muted); font-size:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
+      .vini-sm-pill{display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border:1px solid var(--sm-border); border-radius:999px; background:var(--sm-bg); color:var(--sm-muted); font-size:11.5px;}
+      #vini-sm-close{cursor:pointer; padding:7px 10px; border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border); background:var(--sm-bg); color:var(--sm-text);}
+      #vini-sm-close:hover{border-color:#d1d5db;}
+      .vini-sm-controls{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; align-items:center;}
+      #vini-sm-search{
+        flex:1; min-width:260px; box-sizing:border-box; padding:9px 10px;
+        border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border); background:#fff; color:var(--sm-text); outline:none;
+      }
+      #vini-sm-search:focus{border-color:#93c5fd; box-shadow:0 0 0 4px var(--sm-focus);}
+      .vini-sm-btn{cursor:pointer; padding:8px 10px; border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border); background:var(--sm-bg); color:var(--sm-text); white-space:nowrap;}
+      .vini-sm-btn:hover{border-color:#d1d5db;}
+      .vini-sm-btn-danger{border-color:rgba(185,28,28,.25); background:var(--sm-danger-weak); color:var(--sm-danger);}
+      .vini-sm-section{margin-top:12px; border:1px solid var(--sm-border); border-radius:var(--sm-radius); overflow:hidden; background:#fff;}
+      .vini-sm-section h3{
+        margin:0; padding:10px 12px; font-size:12.5px; font-weight:650;
+        background:var(--sm-bg); border-bottom:1px solid var(--sm-border);
+        display:flex; align-items:center; justify-content:space-between; gap:10px;
+      }
+      .vini-sm-count{color:var(--sm-muted); font-weight:600; font-size:11.5px;}
+      .vini-sm-row{padding:10px 12px; border-bottom:1px solid var(--sm-border); display:flex; flex-direction:column; gap:6px;}
+      .vini-sm-row:last-child{border-bottom:none;}
+      .vini-sm-src{word-break:break-all; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:12px; color:var(--sm-text);}
+      .vini-sm-meta{color:var(--sm-muted); font-size:11.5px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
+      .vini-sm-actions{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:2px;}
+      .vini-sm-toggle{cursor:pointer; padding:7px 10px; border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border); background:#fff; color:var(--sm-text);}
+      .vini-sm-toggle:hover{border-color:#d1d5db;}
+      .vini-sm-toggle-on{border-color:rgba(37,99,235,.35); background:var(--sm-accent-weak); color:var(--sm-accent); font-weight:650;}
+      details.vini-sm-details{border-top:1px solid var(--sm-border);}
+      details.vini-sm-details>summary{
+        cursor:pointer; list-style:none; padding:10px 12px; background:#fff;
+        display:flex; align-items:center; justify-content:space-between; gap:10px; font-weight:650;
+      }
+      details.vini-sm-details>summary::-webkit-details-marker{display:none;}
+      details.vini-sm-details[open]>summary{background:var(--sm-bg); border-bottom:1px solid var(--sm-border);}
+      .vini-sm-warn{padding:8px 10px; border:1px solid rgba(180,83,9,.25); background:var(--sm-warn-weak); border-radius:var(--sm-radius-sm); color:var(--sm-warn); font-size:11.5px;}
     `);
   }
 
   function openOverlay(titleText) {
     if (document.getElementById('vini-sm-overlay')) return null;
-
     ensureStyles();
 
     const overlay = document.createElement('div');
@@ -250,6 +270,9 @@
     const head = document.createElement('div');
     head.id = 'vini-sm-head';
 
+    const bar = document.createElement('div');
+    bar.className = 'vini-sm-headbar';
+
     const title = document.createElement('div');
     title.id = 'vini-sm-title';
     title.textContent = titleText;
@@ -257,132 +280,244 @@
     const closeBtn = document.createElement('button');
     closeBtn.id = 'vini-sm-close';
     closeBtn.textContent = 'Fechar';
-
     closeBtn.addEventListener('click', () => overlay.remove());
+
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
-    head.appendChild(title);
-    head.appendChild(closeBtn);
+    bar.appendChild(title);
+    bar.appendChild(closeBtn);
+    head.appendChild(bar);
 
     panel.appendChild(head);
     overlay.appendChild(panel);
-
     (document.documentElement || document.body).appendChild(overlay);
+
     return panel;
   }
 
-  // =========================
-  // Painel por site
-  // =========================
   function openSitePanel() {
     const panel = openOverlay(`Scripts detectados em ${HOST}`);
     if (!panel) return;
 
+    const head = panel.querySelector('#vini-sm-head');
+
+    const sub = document.createElement('div');
+    sub.className = 'vini-sm-sub';
+    sub.innerHTML = `
+      <span class="vini-sm-pill">Bloqueio por origin + pathname</span>
+      <span class="vini-sm-pill">Query/hash ignorados</span>
+      <span class="vini-sm-pill">Inline: só visualização</span>
+    `;
+
+    const controls = document.createElement('div');
+    controls.className = 'vini-sm-controls';
+
     const search = document.createElement('input');
     search.id = 'vini-sm-search';
-    search.placeholder = 'Filtrar por URL (src)…';
+    search.placeholder = 'Filtrar (URL, domínio ou trecho)…';
+
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'vini-sm-btn';
+    refreshBtn.textContent = 'Recarregar lista';
+
+    controls.appendChild(search);
+    controls.appendChild(refreshBtn);
 
     const warn = document.createElement('div');
-    warn.className = 'vini-sm-warn vini-sm-small';
-    warn.textContent = 'Bloqueio por origin+pathname (ignora query/hash). Inline: visualização.';
+    warn.className = 'vini-sm-warn';
+    warn.textContent = 'Se você bloquear um script essencial (login/captcha/dependências), a página pode quebrar. Libere e recarregue.';
 
-    const list = document.createElement('div');
+    head.appendChild(sub);
+    head.appendChild(controls);
+    head.appendChild(warn);
 
-    panel.appendChild(search);
-    panel.appendChild(warn);
-    panel.appendChild(list);
+    const container = document.createElement('div');
+    panel.appendChild(container);
+
+    function groupByOrigin(externals) {
+      const map = new Map();
+      for (const s of externals) {
+        let origin = '(desconhecido)';
+        try { origin = new URL(s.href).origin; } catch {}
+        if (!map.has(origin)) map.set(origin, []);
+        map.get(origin).push(s);
+      }
+      return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    }
+
+    function matchesQuery(s, q) {
+      if (!q) return true;
+      const hay = [s.kind, s.href || '', s.key || '', s.id || '', s.preview || ''].join(' ').toLowerCase();
+      return hay.includes(q);
+    }
 
     function renderList() {
       const q = (search.value || '').trim().toLowerCase();
-      list.textContent = '';
+      container.textContent = '';
 
-      const scripts = [...document.querySelectorAll('script')]
-        .map(describeScript)
-        .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'external' ? -1 : 1));
+      const described = [...document.querySelectorAll('script')].map(describeScript);
+      const externalsAll = described.filter(s => s.kind === 'external');
+      const inlineAll = described.filter(s => s.kind === 'inline');
 
-      const filtered = scripts.filter(s =>
-        s.kind !== 'external' || !q || (s.href || '').toLowerCase().includes(q)
-      );
+      const externals = externalsAll.filter(s => matchesQuery(s, q));
+      const inlines = inlineAll.filter(s => matchesQuery(s, q));
 
-      const header = document.createElement('div');
-      header.className = 'vini-sm-small';
-      header.textContent = `Total: ${scripts.length}`;
-      list.appendChild(header);
+      const topInfo = document.createElement('div');
+      topInfo.className = 'vini-sm-sub';
+      topInfo.innerHTML = `
+        <span class="vini-sm-pill">Total na página: ${described.length}</span>
+        <span class="vini-sm-pill">Externos: ${externalsAll.length} (no filtro: ${externals.length})</span>
+        <span class="vini-sm-pill">Inline: ${inlineAll.length} (no filtro: ${inlines.length})</span>
+        <span class="vini-sm-pill">Bloqueados neste host: ${blocked.size}</span>
+      `;
+      container.appendChild(topInfo);
 
-      for (const s of filtered) {
-        const row = document.createElement('div');
-        row.className = 'vini-sm-row';
+      const secExt = document.createElement('div');
+      secExt.className = 'vini-sm-section';
 
-        if (s.kind === 'external') {
-          const main = document.createElement('div');
-          main.className = 'vini-sm-src';
-          main.textContent = s.href;
+      const hExt = document.createElement('h3');
+      hExt.innerHTML = `<span>Externos (agrupados por domínio)</span><span class="vini-sm-count">${externals.length}</span>`;
+      secExt.appendChild(hExt);
 
-          const meta = document.createElement('div');
-          meta.className = 'vini-sm-meta vini-sm-small';
-          meta.textContent = `chave: ${s.key} | estado: ${blocked.has(s.key) ? 'bloqueado' : 'liberado'}`;
+      const grouped = groupByOrigin(externals);
+      if (grouped.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'vini-sm-row';
+        empty.textContent = 'Nenhum script externo corresponde ao filtro.';
+        secExt.appendChild(empty);
+      } else {
+        for (const [origin, items] of grouped) {
+          const det = document.createElement('details');
+          det.className = 'vini-sm-details';
+          det.open = (q ? true : items.some(s => blocked.has(s.key)));
 
-          const actions = document.createElement('div');
-          actions.className = 'vini-sm-actions';
+          const sum = document.createElement('summary');
+          const blockedCount = items.filter(s => blocked.has(s.key)).length;
+          sum.innerHTML = `<span>${origin}</span><span class="vini-sm-count">${items.length} (${blockedCount} bloqueado(s))</span>`;
+          det.appendChild(sum);
 
-          const btn = document.createElement('button');
-          btn.className = 'vini-sm-toggle';
-          btn.textContent = blocked.has(s.key) ? 'Bloqueado (clique p/ liberar)' : 'Bloquear este script';
+          items
+            .sort((a, b) => (a.href || '').localeCompare(b.href || ''))
+            .forEach((s) => {
+              const row = document.createElement('div');
+              row.className = 'vini-sm-row';
 
-          btn.addEventListener('click', () => {
-            const nowOn = !blocked.has(s.key);
-            if (nowOn) blocked.add(s.key);
-            else blocked.delete(s.key);
+              const main = document.createElement('div');
+              main.className = 'vini-sm-src';
+              main.textContent = s.href;
 
-            // Persiste no host e atualiza índice global
-            saveBlockedForHost(HOST, blocked);
+              const meta = document.createElement('div');
+              meta.className = 'vini-sm-meta';
+              meta.textContent = `chave: ${s.key} • estado: ${blocked.has(s.key) ? 'bloqueado' : 'liberado'}`;
 
-            // Recarrega cache local
-            blocked = loadBlockedForHost(HOST);
+              const actions = document.createElement('div');
+              actions.className = 'vini-sm-actions';
 
-            btn.textContent = blocked.has(s.key) ? 'Bloqueado (clique p/ liberar)' : 'Bloquear este script';
-            meta.textContent = `chave: ${s.key} | estado: ${blocked.has(s.key) ? 'bloqueado' : 'liberado'}`;
-          });
+              const btn = document.createElement('button');
+              const isOn = blocked.has(s.key);
+              btn.className = 'vini-sm-toggle ' + (isOn ? 'vini-sm-toggle-on' : '');
+              btn.textContent = isOn ? 'Bloqueado (clique p/ liberar)' : 'Bloquear';
+              btn.addEventListener('click', () => {
+                const nowOn = !blocked.has(s.key);
+                if (nowOn) blocked.add(s.key);
+                else blocked.delete(s.key);
 
-          actions.appendChild(btn);
+                saveBlockedForHost(HOST, blocked);
+                blocked = loadBlockedForHost(HOST);
+                renderList();
+              });
 
-          row.appendChild(main);
-          row.appendChild(meta);
-          row.appendChild(actions);
-        } else {
+              actions.appendChild(btn);
+              row.appendChild(main);
+              row.appendChild(meta);
+              row.appendChild(actions);
+              det.appendChild(row);
+            });
+
+          secExt.appendChild(det);
+        }
+      }
+      container.appendChild(secExt);
+
+      const secIn = document.createElement('div');
+      secIn.className = 'vini-sm-section';
+
+      const hIn = document.createElement('h3');
+      hIn.innerHTML = `<span>Inline (somente visualização)</span><span class="vini-sm-count">${inlines.length}</span>`;
+      secIn.appendChild(hIn);
+
+      if (inlines.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'vini-sm-row';
+        empty.textContent = 'Nenhum script inline corresponde ao filtro.';
+        secIn.appendChild(empty);
+      } else {
+        const det = document.createElement('details');
+        det.className = 'vini-sm-details';
+        det.open = !!q;
+
+        const sum = document.createElement('summary');
+        sum.innerHTML = `<span>Ver lista de inline</span><span class="vini-sm-count">${inlines.length}</span>`;
+        det.appendChild(sum);
+
+        inlines.forEach((s) => {
+          const row = document.createElement('div');
+          row.className = 'vini-sm-row';
+
           const main = document.createElement('div');
           main.className = 'vini-sm-src';
           main.textContent = `[inline] ${s.id}`;
-          row.appendChild(main);
-        }
 
-        list.appendChild(row);
+          const meta = document.createElement('div');
+          meta.className = 'vini-sm-meta';
+          meta.textContent = `tamanho: ${s.size} chars • preview: ${s.preview ? s.preview.slice(0, 160) : ''}`;
+
+          row.appendChild(main);
+          row.appendChild(meta);
+          det.appendChild(row);
+        });
+
+        secIn.appendChild(det);
       }
+      container.appendChild(secIn);
     }
 
     search.addEventListener('input', renderList);
+    refreshBtn.addEventListener('click', renderList);
     renderList();
   }
 
-  // =========================
-  // Painel global (fora do site)
-  // =========================
   function openGlobalBlockedPanel() {
     const panel = openOverlay('Scripts bloqueados (global)');
     if (!panel) return;
 
+    const head = panel.querySelector('#vini-sm-head');
+
+    const sub = document.createElement('div');
+    sub.className = 'vini-sm-sub';
+    sub.innerHTML = `
+      <span class="vini-sm-pill">Fonte: índice global sincronizado</span>
+      <span class="vini-sm-pill">Agrupado por host</span>
+    `;
+
+    const controls = document.createElement('div');
+    controls.className = 'vini-sm-controls';
+
     const search = document.createElement('input');
     search.id = 'vini-sm-search';
-    search.placeholder = 'Filtrar por host ou por chave…';
+    search.placeholder = 'Filtrar (host ou chave)…';
 
-    const warn = document.createElement('div');
-    warn.className = 'vini-sm-warn vini-sm-small';
-    warn.textContent = 'Fonte: índice global (sincronizado ao bloquear/liberar).';
+    const clearAllBtn = document.createElement('button');
+    clearAllBtn.className = 'vini-sm-btn vini-sm-btn-danger';
+    clearAllBtn.textContent = 'Zerar tudo (global)';
+
+    controls.appendChild(search);
+    controls.appendChild(clearAllBtn);
+
+    head.appendChild(sub);
+    head.appendChild(controls);
 
     const list = document.createElement('div');
-
-    panel.appendChild(search);
-    panel.appendChild(warn);
     panel.appendChild(list);
 
     function render() {
@@ -392,51 +527,55 @@
       const index = loadIndex();
       const hosts = Object.keys(index).sort();
 
-      const rows = [];
-      for (const h of hosts) {
-        const keys = Array.isArray(index[h]) ? index[h] : [];
-        for (const k of keys) rows.push({ host: h, key: k });
-      }
+      let totalKeys = 0;
+      for (const h of hosts) totalKeys += (Array.isArray(index[h]) ? index[h].length : 0);
 
-      const filtered = rows.filter(r =>
-        !q || r.host.toLowerCase().includes(q) || r.key.toLowerCase().includes(q)
-      );
+      const info = document.createElement('div');
+      info.className = 'vini-sm-sub';
+      info.innerHTML = `
+        <span class="vini-sm-pill">Hosts: ${hosts.length}</span>
+        <span class="vini-sm-pill">Bloqueios: ${totalKeys}</span>
+      `;
+      list.appendChild(info);
 
-      const header = document.createElement('div');
-      header.className = 'vini-sm-small';
-      header.textContent = `Total de bloqueios: ${rows.length} | hosts: ${hosts.length}`;
-      list.appendChild(header);
-
-      if (filtered.length === 0) {
+      if (hosts.length === 0) {
         const empty = document.createElement('div');
-        empty.className = 'vini-sm-row vini-sm-small';
-        empty.textContent = 'Nada encontrado.';
+        empty.className = 'vini-sm-section';
+        const row = document.createElement('div');
+        row.className = 'vini-sm-row';
+        row.textContent = 'Nenhum bloqueio global registrado.';
+        empty.appendChild(row);
         list.appendChild(empty);
         return;
       }
 
-      // Agrupa por host para legibilidade
-      const byHost = new Map();
-      for (const r of filtered) {
-        if (!byHost.has(r.host)) byHost.set(r.host, []);
-        byHost.get(r.host).push(r.key);
-      }
+      for (const h of hosts) {
+        const keys = (Array.isArray(index[h]) ? index[h] : []).slice().sort();
+        const visibleKeys = keys.filter(k => {
+          if (!q) return true;
+          return h.toLowerCase().includes(q) || k.toLowerCase().includes(q);
+        });
+        if (visibleKeys.length === 0) continue;
 
-      for (const [h, keys] of byHost.entries()) {
-        const hostRow = document.createElement('div');
-        hostRow.className = 'vini-sm-row';
+        const sec = document.createElement('div');
+        sec.className = 'vini-sm-section';
 
-        const top = document.createElement('div');
-        top.className = 'vini-sm-grid';
+        const det = document.createElement('details');
+        det.className = 'vini-sm-details';
+        det.open = !!q;
 
-        const left = document.createElement('div');
-        left.innerHTML = `<span class="vini-sm-pill">${h}</span> <span class="vini-sm-small">(${keys.length})</span>`;
+        const sum = document.createElement('summary');
+        sum.innerHTML = `<span>${h}</span><span class="vini-sm-count">${visibleKeys.length} bloqueado(s)</span>`;
+        det.appendChild(sum);
 
-        const right = document.createElement('div');
-        right.className = 'vini-sm-actions';
+        const actionRow = document.createElement('div');
+        actionRow.className = 'vini-sm-row';
+
+        const actions = document.createElement('div');
+        actions.className = 'vini-sm-actions';
 
         const clearHostBtn = document.createElement('button');
-        clearHostBtn.className = 'vini-sm-toggle';
+        clearHostBtn.className = 'vini-sm-btn';
         clearHostBtn.textContent = 'Liberar todos deste host';
         clearHostBtn.addEventListener('click', () => {
           saveBlockedForHost(h, new Set());
@@ -444,18 +583,24 @@
           render();
         });
 
-        right.appendChild(clearHostBtn);
-        top.appendChild(left);
-        top.appendChild(right);
-        hostRow.appendChild(top);
+        actions.appendChild(clearHostBtn);
+        actionRow.appendChild(actions);
+        det.appendChild(actionRow);
 
-        keys.sort().forEach((k) => {
-          const item = document.createElement('div');
-          item.className = 'vini-sm-meta vini-sm-small';
-          item.style.marginTop = '6px';
+        visibleKeys.forEach((k) => {
+          const row = document.createElement('div');
+          row.className = 'vini-sm-row';
 
-          const wrap = document.createElement('div');
-          wrap.className = 'vini-sm-actions';
+          const meta = document.createElement('div');
+          meta.className = 'vini-sm-meta';
+          meta.textContent = 'chave bloqueada:';
+
+          const keyText = document.createElement('div');
+          keyText.className = 'vini-sm-src';
+          keyText.textContent = k;
+
+          const itemActions = document.createElement('div');
+          itemActions.className = 'vini-sm-actions';
 
           const btn = document.createElement('button');
           btn.className = 'vini-sm-toggle';
@@ -468,30 +613,39 @@
             render();
           });
 
-          const keyText = document.createElement('span');
-          keyText.className = 'vini-sm-src';
-          keyText.textContent = k;
-
-          wrap.appendChild(btn);
-          wrap.appendChild(keyText);
-          item.appendChild(wrap);
-          hostRow.appendChild(item);
+          itemActions.appendChild(btn);
+          row.appendChild(meta);
+          row.appendChild(keyText);
+          row.appendChild(itemActions);
+          det.appendChild(row);
         });
 
-        list.appendChild(hostRow);
+        sec.appendChild(det);
+        list.appendChild(sec);
       }
     }
+
+    clearAllBtn.addEventListener('click', () => {
+      const index = loadIndex();
+      for (const h of Object.keys(index)) saveBlockedForHost(h, new Set());
+      GM_setValue(INDEX_KEY, '{}');
+      blocked = loadBlockedForHost(HOST);
+      render();
+    });
 
     search.addEventListener('input', render);
     render();
   }
 
   // =========================
-  // Menu Tampermonkey
+  // Menu Tampermonkey (somente no topo)
   // =========================
   GM_registerMenuCommand('Abrir painel de scripts (este site)', openSitePanel);
   GM_registerMenuCommand('Gerenciar scripts bloqueados (global)', openGlobalBlockedPanel);
 
-  // Diagnóstico opcional (mantém fácil verificar se o script está rodando na página)
-  GM_registerMenuCommand('Ping (diagnóstico)', () => alert('Script Manager carregou nesta página.'));
+  // Diagnóstico opcional (ajuda a confirmar que só o topo registra UI)
+  GM_registerMenuCommand('Ping (diagnóstico)', () => {
+    alert(`Script Manager carregou. Topo: ${IS_TOP ? 'sim' : 'não'} | Host: ${HOST}`);
+  });
+
 })();
