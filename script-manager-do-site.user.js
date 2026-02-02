@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Script Manager do Site
 // @namespace    script-manager-do-site.user.js
-// @version      0.6
+// @version      0.7
 // @icon         https://img.icons8.com/?size=100&id=LXhpSVCU82mF&format=png&color=000000
 // @description  Bloqueia scripts externos por host usando chave estável (origin+pathname).
 // @author       lourencosv (GPT)
@@ -21,15 +21,12 @@
 (() => {
   'use strict';
 
-  // Evita double-run no mesmo documento (por reloads parciais/bugs de injeção)
+  // Evita double-run no MESMO documento. Não impede reexecução em navegação real.
   if (window.__VINI_SM_LOADED__) return;
   window.__VINI_SM_LOADED__ = true;
 
   const HOST = location.hostname || '(sem-host)';
-
-  const IS_TOP = (() => {
-    try { return window.top === window.self; } catch { return true; }
-  })();
+  const IS_TOP = (() => { try { return window.top === window.self; } catch { return true; } })();
 
   // =========================
   // Storage
@@ -46,16 +43,13 @@
       return {};
     }
   }
-
   function saveIndex(indexObj) {
     GM_setValue(INDEX_KEY, JSON.stringify(indexObj));
   }
-
   function loadBlockedForHost(host) {
     const raw = GM_getValue(SITE_KEY(host), '[]');
     try { return new Set(JSON.parse(raw)); } catch { return new Set(); }
   }
-
   function saveBlockedForHost(host, set) {
     GM_setValue(SITE_KEY(host), JSON.stringify([...set]));
     const index = loadIndex();
@@ -78,7 +72,6 @@
       return String(src || '').trim();
     }
   }
-
   function fullHref(src) {
     try { return new URL(src, location.href).href; } catch { return String(src || '').trim(); }
   }
@@ -182,16 +175,139 @@
     };
 
     if (document.documentElement) start();
-    else new MutationObserver(() => {
-      if (document.documentElement) start();
-    }).observe(document, { childList: true, subtree: true });
+    else new MutationObserver(() => { if (document.documentElement) start(); })
+      .observe(document, { childList: true, subtree: true });
   }
 
   installInterceptors();
   installMutationBlocker();
 
-  // Se estiver dentro de iframe/frame: mantém bloqueio, mas não registra UI/menu (evita duplicação)
+  // Em iframe: mantém bloqueio. A UI fica no topo, mas vamos dar opção de listar frames same-origin a partir do topo.
   if (!IS_TOP) return;
+
+  // =========================
+  // Trava de navegação enquanto painel aberto
+  // =========================
+  const navLock = (() => {
+    let active = false;
+    let pending = null; // { type, url }
+    let restoreFns = [];
+    let removedMeta = []; // [{node, content}]
+    let statusCb = null;
+
+    function setStatus(msg) {
+      if (typeof statusCb === 'function') statusCb(msg || '');
+    }
+
+    function parseMetaRefresh(content) {
+      // Ex: "0; url=https://example.com"
+      const m = String(content || '').match(/^\s*(\d+)\s*;\s*url\s*=\s*(.+)\s*$/i);
+      if (!m) return null;
+      const seconds = Number(m[1] || 0);
+      const url = (m[2] || '').replace(/^['"]|['"]$/g, '');
+      return { seconds, url };
+    }
+
+    function disableMetaRefresh() {
+      try {
+        const metas = Array.from(document.querySelectorAll('meta[http-equiv="refresh" i]'));
+        for (const meta of metas) {
+          const content = meta.getAttribute('content') || '';
+          const parsed = parseMetaRefresh(content);
+          if (parsed && parsed.url) {
+            removedMeta.push({ node: meta, content });
+            meta.parentNode && meta.parentNode.removeChild(meta);
+            pending = pending || { type: 'meta-refresh', url: new URL(parsed.url, location.href).href };
+            setStatus('Redirecionamento (meta refresh) adiado até fechar o painel.');
+          }
+        }
+      } catch {}
+    }
+
+    function wrap(obj, prop, wrapper) {
+      const orig = obj[prop];
+      if (typeof orig !== 'function') return;
+      obj[prop] = wrapper(orig);
+      restoreFns.push(() => { obj[prop] = orig; });
+    }
+
+    function start(onStatus) {
+      if (active) return;
+      active = true;
+      pending = null;
+      removedMeta = [];
+      restoreFns = [];
+      statusCb = onStatus || null;
+
+      // 1) Intercepta location.assign/replace (mais comum em páginas de redirect)
+      try {
+        wrap(window.location, 'assign', (orig) => function(url) {
+          if (!active) return orig.call(this, url);
+          pending = { type: 'location.assign', url: new URL(String(url), location.href).href };
+          setStatus('Redirecionamento (location.assign) adiado até fechar o painel.');
+        });
+        wrap(window.location, 'replace', (orig) => function(url) {
+          if (!active) return orig.call(this, url);
+          pending = { type: 'location.replace', url: new URL(String(url), location.href).href };
+          setStatus('Redirecionamento (location.replace) adiado até fechar o painel.');
+        });
+      } catch {}
+
+      // 2) Intercepta history (SPAs às vezes fazem “redirect” via state)
+      try {
+        wrap(history, 'pushState', (orig) => function(state, title, url) {
+          if (!active) return orig.apply(this, arguments);
+          if (url != null) {
+            pending = { type: 'history.pushState', url: new URL(String(url), location.href).href };
+            setStatus('Navegação (pushState) adiada até fechar o painel.');
+            return;
+          }
+          return orig.apply(this, arguments);
+        });
+        wrap(history, 'replaceState', (orig) => function(state, title, url) {
+          if (!active) return orig.apply(this, arguments);
+          if (url != null) {
+            pending = { type: 'history.replaceState', url: new URL(String(url), location.href).href };
+            setStatus('Navegação (replaceState) adiada até fechar o painel.');
+            return;
+          }
+          return orig.apply(this, arguments);
+        });
+      } catch {}
+
+      // 3) Desativa meta refresh
+      disableMetaRefresh();
+    }
+
+    function stop() {
+      if (!active) return null;
+      active = false;
+
+      for (const r of restoreFns) { try { r(); } catch {} }
+      restoreFns = [];
+
+      // Se removemos meta refresh, reanexa só se NÃO houver pending (porque vamos navegar nós mesmos)
+      if (!pending) {
+        for (const it of removedMeta) {
+          try {
+            it.node.setAttribute('content', it.content);
+            document.head && document.head.appendChild(it.node);
+          } catch {}
+        }
+      }
+      removedMeta = [];
+
+      const p = pending;
+      pending = null;
+      setStatus('');
+      statusCb = null;
+      return p;
+    }
+
+    function isActive() { return active; }
+
+    return { start, stop, isActive };
+  })();
 
   // =========================
   // UI (CLEAN/LIGHT)
@@ -199,9 +315,9 @@
   function ensureStyles() {
     GM_addStyle(`
       :root{
-        --sm-bg:#f7f7f8; --sm-surface:#fff; --sm-text:#111827; --sm-muted:#6b7280;
-        --sm-border:#e5e7eb; --sm-shadow:0 18px 60px rgba(17,24,39,.18);
-        --sm-focus:rgba(59,130,246,.25); --sm-accent:#2563eb; --sm-accent-weak:rgba(37,99,235,.10);
+        --sm-bg:#f7f7f8; --sm-surface:#fff; --sm-text:#111827; --sm-muted:#6b7280; --sm-border:#e5e7eb;
+        --sm-shadow:0 18px 60px rgba(17,24,39,.18); --sm-focus:rgba(59,130,246,.25);
+        --sm-accent:#2563eb; --sm-accent-weak:rgba(37,99,235,.10);
         --sm-warn:#b45309; --sm-warn-weak:rgba(245,158,11,.18);
         --sm-danger:#b91c1c; --sm-danger-weak:rgba(239,68,68,.12);
         --sm-radius:14px; --sm-radius-sm:10px;
@@ -219,25 +335,20 @@
       .vini-sm-headbar{display:flex; gap:10px; align-items:center; justify-content:space-between;}
       #vini-sm-title{font-size:13px; font-weight:650; letter-spacing:.2px;}
       .vini-sm-sub{margin-top:6px; color:var(--sm-muted); font-size:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
-      .vini-sm-pill{display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border:1px solid var(--sm-border); border-radius:999px; background:var(--sm-bg); color:var(--sm-muted); font-size:11.5px;}
       #vini-sm-close{cursor:pointer; padding:7px 10px; border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border); background:var(--sm-bg); color:var(--sm-text);}
       #vini-sm-close:hover{border-color:#d1d5db;}
       .vini-sm-controls{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; align-items:center;}
       #vini-sm-search{
         flex:1; min-width:260px; box-sizing:border-box; padding:9px 10px;
-        border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border); background:#fff; color:var(--sm-text); outline:none;
+        border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border);
+        background:#fff; color:var(--sm-text); outline:none;
       }
       #vini-sm-search:focus{border-color:#93c5fd; box-shadow:0 0 0 4px var(--sm-focus);}
       .vini-sm-btn{cursor:pointer; padding:8px 10px; border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border); background:var(--sm-bg); color:var(--sm-text); white-space:nowrap;}
       .vini-sm-btn:hover{border-color:#d1d5db;}
       .vini-sm-btn-danger{border-color:rgba(185,28,28,.25); background:var(--sm-danger-weak); color:var(--sm-danger);}
       .vini-sm-section{margin-top:12px; border:1px solid var(--sm-border); border-radius:var(--sm-radius); overflow:hidden; background:#fff;}
-      .vini-sm-section h3{
-        margin:0; padding:10px 12px; font-size:12.5px; font-weight:650;
-        background:var(--sm-bg); border-bottom:1px solid var(--sm-border);
-        display:flex; align-items:center; justify-content:space-between; gap:10px;
-      }
-      .vini-sm-count{color:var(--sm-muted); font-weight:600; font-size:11.5px;}
+      .vini-sm-section h3{margin:0; padding:10px 12px; font-size:12.5px; font-weight:650; background:var(--sm-bg); border-bottom:1px solid var(--sm-border); display:flex; align-items:center; justify-content:space-between; gap:10px;}
       .vini-sm-row{padding:10px 12px; border-bottom:1px solid var(--sm-border); display:flex; flex-direction:column; gap:6px;}
       .vini-sm-row:last-child{border-bottom:none;}
       .vini-sm-src{word-break:break-all; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:12px; color:var(--sm-text);}
@@ -247,17 +358,30 @@
       .vini-sm-toggle:hover{border-color:#d1d5db;}
       .vini-sm-toggle-on{border-color:rgba(37,99,235,.35); background:var(--sm-accent-weak); color:var(--sm-accent); font-weight:650;}
       details.vini-sm-details{border-top:1px solid var(--sm-border);}
-      details.vini-sm-details>summary{
-        cursor:pointer; list-style:none; padding:10px 12px; background:#fff;
-        display:flex; align-items:center; justify-content:space-between; gap:10px; font-weight:650;
-      }
+      details.vini-sm-details>summary{cursor:pointer; list-style:none; padding:10px 12px; background:#fff; display:flex; align-items:center; justify-content:space-between; gap:10px; font-weight:650;}
       details.vini-sm-details>summary::-webkit-details-marker{display:none;}
       details.vini-sm-details[open]>summary{background:var(--sm-bg); border-bottom:1px solid var(--sm-border);}
       .vini-sm-warn{padding:8px 10px; border:1px solid rgba(180,83,9,.25); background:var(--sm-warn-weak); border-radius:var(--sm-radius-sm); color:var(--sm-warn); font-size:11.5px;}
+      .vini-sm-status{padding:8px 10px; border:1px solid rgba(37,99,235,.25); background:rgba(37,99,235,.08); border-radius:var(--sm-radius-sm); color:var(--sm-accent); font-size:11.5px;}
+      /* Launcher */
+      #vini-sm-launcher{
+        position:fixed; right:12px; bottom:12px; z-index:2147483646;
+        border:1px solid var(--sm-border); background:var(--sm-surface);
+        color:var(--sm-text); border-radius:999px; box-shadow:0 10px 30px rgba(17,24,39,.14);
+        padding:8px 10px; font:var(--sm-font); cursor:pointer;
+        display:flex; gap:8px; align-items:center;
+      }
+      #vini-sm-launcher:hover{border-color:#d1d5db;}
+      #vini-sm-launcher small{color:var(--sm-muted); font-size:11px;}
     `);
   }
 
-  function openOverlay(titleText) {
+  function whenDomReady(fn) {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') fn();
+    else document.addEventListener('DOMContentLoaded', fn, { once: true });
+  }
+
+  function openOverlay(titleText, { lockNavigation } = { lockNavigation: true }) {
     if (document.getElementById('vini-sm-overlay')) return null;
     ensureStyles();
 
@@ -280,34 +404,112 @@
     const closeBtn = document.createElement('button');
     closeBtn.id = 'vini-sm-close';
     closeBtn.textContent = 'Fechar';
-    closeBtn.addEventListener('click', () => overlay.remove());
 
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    const status = document.createElement('div');
+    status.className = 'vini-sm-status';
+    status.style.display = 'none';
+
+    function setStatus(msg) {
+      const t = String(msg || '').trim();
+      if (!t) { status.style.display = 'none'; status.textContent = ''; return; }
+      status.style.display = 'block';
+      status.textContent = t;
+    }
+
+    function closeOverlay() {
+      try { overlay.remove(); } catch {}
+      // Libera navegação e executa pendente (se houver)
+      if (lockNavigation) {
+        const p = navLock.stop();
+        if (p && p.url) {
+          // navega após fechar, como você pediu
+          try { window.location.href = p.url; } catch {}
+        }
+      }
+    }
+
+    closeBtn.addEventListener('click', closeOverlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(); });
 
     bar.appendChild(title);
     bar.appendChild(closeBtn);
+
     head.appendChild(bar);
+    head.appendChild(status);
 
     panel.appendChild(head);
     overlay.appendChild(panel);
-    (document.documentElement || document.body).appendChild(overlay);
+
+    whenDomReady(() => {
+      (document.body || document.documentElement).appendChild(overlay);
+    });
+
+    // Liga trava de navegação ao abrir
+    if (lockNavigation) navLock.start(setStatus);
+
+    // ESC fecha
+    const onKey = (e) => { if (e.key === 'Escape') closeOverlay(); };
+    window.addEventListener('keydown', onKey, true);
+    overlay.addEventListener('remove', () => window.removeEventListener('keydown', onKey, true), { once: true });
 
     return panel;
   }
 
+  // =========================
+  // Coleta de scripts incluindo frames same-origin
+  // =========================
+  function collectScriptsFromDoc(doc) {
+    try {
+      return Array.from(doc.querySelectorAll('script')).map(describeScript);
+    } catch {
+      return [];
+    }
+  }
+
+  function collectScriptsIncludingFrames({ includeFrames }) {
+    const all = [];
+    const notes = [];
+
+    all.push(...collectScriptsFromDoc(document));
+
+    if (!includeFrames) return { described: all, notes };
+
+    const visited = new Set();
+
+    function walk(win, path) {
+      if (!win || visited.has(win)) return;
+      visited.add(win);
+
+      let doc;
+      try { doc = win.document; } catch {
+        notes.push(`Frame inacessível (cross-origin): ${path}`);
+        return;
+      }
+      all.push(...collectScriptsFromDoc(doc));
+
+      let frames;
+      try { frames = win.frames; } catch { return; }
+      for (let i = 0; i < frames.length; i++) {
+        walk(frames[i], `${path}/${i}`);
+      }
+    }
+
+    walk(window, 'top');
+    return { described: all, notes };
+  }
+
+  // =========================
+  // Panels
+  // =========================
   function openSitePanel() {
-    const panel = openOverlay(`Scripts detectados em ${HOST}`);
+    const panel = openOverlay(`Scripts detectados em ${HOST}`, { lockNavigation: true });
     if (!panel) return;
 
     const head = panel.querySelector('#vini-sm-head');
 
     const sub = document.createElement('div');
     sub.className = 'vini-sm-sub';
-    sub.innerHTML = `
-      <span class="vini-sm-pill">Bloqueio por origin + pathname</span>
-      <span class="vini-sm-pill">Query/hash ignorados</span>
-      <span class="vini-sm-pill">Inline: só visualização</span>
-    `;
+    sub.textContent = 'Bloqueio por origin + pathname. Query/hash ignorados. Inline: só visualização.';
 
     const controls = document.createElement('div');
     controls.className = 'vini-sm-controls';
@@ -320,8 +522,14 @@
     refreshBtn.className = 'vini-sm-btn';
     refreshBtn.textContent = 'Recarregar lista';
 
+    const framesToggle = document.createElement('button');
+    framesToggle.className = 'vini-sm-btn';
+    framesToggle.textContent = 'Incluir frames: não';
+    let includeFrames = false;
+
     controls.appendChild(search);
     controls.appendChild(refreshBtn);
+    controls.appendChild(framesToggle);
 
     const warn = document.createElement('div');
     warn.className = 'vini-sm-warn';
@@ -355,7 +563,8 @@
       const q = (search.value || '').trim().toLowerCase();
       container.textContent = '';
 
-      const described = [...document.querySelectorAll('script')].map(describeScript);
+      const { described, notes } = collectScriptsIncludingFrames({ includeFrames });
+
       const externalsAll = described.filter(s => s.kind === 'external');
       const inlineAll = described.filter(s => s.kind === 'inline');
 
@@ -364,19 +573,23 @@
 
       const topInfo = document.createElement('div');
       topInfo.className = 'vini-sm-sub';
-      topInfo.innerHTML = `
-        <span class="vini-sm-pill">Total na página: ${described.length}</span>
-        <span class="vini-sm-pill">Externos: ${externalsAll.length} (no filtro: ${externals.length})</span>
-        <span class="vini-sm-pill">Inline: ${inlineAll.length} (no filtro: ${inlines.length})</span>
-        <span class="vini-sm-pill">Bloqueados neste host: ${blocked.size}</span>
-      `;
+      topInfo.textContent =
+        `Total: ${described.length} | Externos: ${externalsAll.length} (no filtro: ${externals.length}) | Inline: ${inlineAll.length} (no filtro: ${inlines.length}) | Bloqueados neste host: ${blocked.size}`;
       container.appendChild(topInfo);
 
+      if (notes.length) {
+        const n = document.createElement('div');
+        n.className = 'vini-sm-warn';
+        n.textContent = notes.join(' | ');
+        container.appendChild(n);
+      }
+
+      // Externos
       const secExt = document.createElement('div');
       secExt.className = 'vini-sm-section';
 
       const hExt = document.createElement('h3');
-      hExt.innerHTML = `<span>Externos (agrupados por domínio)</span><span class="vini-sm-count">${externals.length}</span>`;
+      hExt.textContent = `Externos (agrupados por domínio): ${externals.length}`;
       secExt.appendChild(hExt);
 
       const grouped = groupByOrigin(externals);
@@ -393,7 +606,7 @@
 
           const sum = document.createElement('summary');
           const blockedCount = items.filter(s => blocked.has(s.key)).length;
-          sum.innerHTML = `<span>${origin}</span><span class="vini-sm-count">${items.length} (${blockedCount} bloqueado(s))</span>`;
+          sum.textContent = `${origin} • ${items.length} (${blockedCount} bloqueado(s))`;
           det.appendChild(sum);
 
           items
@@ -417,17 +630,18 @@
               const isOn = blocked.has(s.key);
               btn.className = 'vini-sm-toggle ' + (isOn ? 'vini-sm-toggle-on' : '');
               btn.textContent = isOn ? 'Bloqueado (clique p/ liberar)' : 'Bloquear';
+
               btn.addEventListener('click', () => {
                 const nowOn = !blocked.has(s.key);
                 if (nowOn) blocked.add(s.key);
                 else blocked.delete(s.key);
-
                 saveBlockedForHost(HOST, blocked);
                 blocked = loadBlockedForHost(HOST);
                 renderList();
               });
 
               actions.appendChild(btn);
+
               row.appendChild(main);
               row.appendChild(meta);
               row.appendChild(actions);
@@ -439,11 +653,12 @@
       }
       container.appendChild(secExt);
 
+      // Inline
       const secIn = document.createElement('div');
       secIn.className = 'vini-sm-section';
 
       const hIn = document.createElement('h3');
-      hIn.innerHTML = `<span>Inline (somente visualização)</span><span class="vini-sm-count">${inlines.length}</span>`;
+      hIn.textContent = `Inline (somente visualização): ${inlines.length}`;
       secIn.appendChild(hIn);
 
       if (inlines.length === 0) {
@@ -457,7 +672,7 @@
         det.open = !!q;
 
         const sum = document.createElement('summary');
-        sum.innerHTML = `<span>Ver lista de inline</span><span class="vini-sm-count">${inlines.length}</span>`;
+        sum.textContent = `Ver lista de inline (${inlines.length})`;
         det.appendChild(sum);
 
         inlines.forEach((s) => {
@@ -484,21 +699,25 @@
 
     search.addEventListener('input', renderList);
     refreshBtn.addEventListener('click', renderList);
+
+    framesToggle.addEventListener('click', () => {
+      includeFrames = !includeFrames;
+      framesToggle.textContent = `Incluir frames: ${includeFrames ? 'sim' : 'não'}`;
+      renderList();
+    });
+
     renderList();
   }
 
   function openGlobalBlockedPanel() {
-    const panel = openOverlay('Scripts bloqueados (global)');
+    const panel = openOverlay('Scripts bloqueados (global)', { lockNavigation: false });
     if (!panel) return;
 
     const head = panel.querySelector('#vini-sm-head');
 
     const sub = document.createElement('div');
     sub.className = 'vini-sm-sub';
-    sub.innerHTML = `
-      <span class="vini-sm-pill">Fonte: índice global sincronizado</span>
-      <span class="vini-sm-pill">Agrupado por host</span>
-    `;
+    sub.textContent = 'Fonte: índice global sincronizado. Agrupado por host.';
 
     const controls = document.createElement('div');
     controls.className = 'vini-sm-controls';
@@ -532,10 +751,7 @@
 
       const info = document.createElement('div');
       info.className = 'vini-sm-sub';
-      info.innerHTML = `
-        <span class="vini-sm-pill">Hosts: ${hosts.length}</span>
-        <span class="vini-sm-pill">Bloqueios: ${totalKeys}</span>
-      `;
+      info.textContent = `Hosts: ${hosts.length} | Bloqueios: ${totalKeys}`;
       list.appendChild(info);
 
       if (hosts.length === 0) {
@@ -565,7 +781,7 @@
         det.open = !!q;
 
         const sum = document.createElement('summary');
-        sum.innerHTML = `<span>${h}</span><span class="vini-sm-count">${visibleKeys.length} bloqueado(s)</span>`;
+        sum.textContent = `${h} • ${visibleKeys.length} bloqueado(s)`;
         det.appendChild(sum);
 
         const actionRow = document.createElement('div');
@@ -577,6 +793,7 @@
         const clearHostBtn = document.createElement('button');
         clearHostBtn.className = 'vini-sm-btn';
         clearHostBtn.textContent = 'Liberar todos deste host';
+
         clearHostBtn.addEventListener('click', () => {
           saveBlockedForHost(h, new Set());
           if (h === HOST) blocked = loadBlockedForHost(HOST);
@@ -605,6 +822,7 @@
           const btn = document.createElement('button');
           btn.className = 'vini-sm-toggle';
           btn.textContent = 'Liberar';
+
           btn.addEventListener('click', () => {
             const set = loadBlockedForHost(h);
             set.delete(k);
@@ -614,6 +832,7 @@
           });
 
           itemActions.appendChild(btn);
+
           row.appendChild(meta);
           row.appendChild(keyText);
           row.appendChild(itemActions);
@@ -638,14 +857,40 @@
   }
 
   // =========================
-  // Menu Tampermonkey (somente no topo)
+  // Launcher (evita “sumir” em algumas páginas)
+  // =========================
+  function ensureLauncher() {
+    if (document.getElementById('vini-sm-launcher')) return;
+    ensureStyles();
+
+    const btn = document.createElement('button');
+    btn.id = 'vini-sm-launcher';
+    btn.type = 'button';
+    btn.innerHTML = `<strong>SM</strong> <small>${HOST}</small>`;
+    btn.addEventListener('click', () => openSitePanel());
+
+    whenDomReady(() => {
+      (document.body || document.documentElement).appendChild(btn);
+    });
+  }
+
+  // Recria launcher se algum script do site tentar removê-lo.
+  function keepLauncherAlive() {
+    whenDomReady(() => {
+      ensureLauncher();
+      const obs = new MutationObserver(() => ensureLauncher());
+      obs.observe(document.documentElement || document, { childList: true, subtree: true });
+    });
+  }
+
+  // =========================
+  // Menu Tampermonkey (topo)
   // =========================
   GM_registerMenuCommand('Abrir painel de scripts (este site)', openSitePanel);
   GM_registerMenuCommand('Gerenciar scripts bloqueados (global)', openGlobalBlockedPanel);
-
-  // Diagnóstico opcional (ajuda a confirmar que só o topo registra UI)
   GM_registerMenuCommand('Ping (diagnóstico)', () => {
-    alert(`Script Manager carregou. Topo: ${IS_TOP ? 'sim' : 'não'} | Host: ${HOST}`);
+    alert(`Script Manager carregou.\nTopo: ${IS_TOP ? 'sim' : 'não'} | Host: ${HOST}`);
   });
 
+  keepLauncherAlive();
 })();
