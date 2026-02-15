@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Script Manager do Site
 // @namespace    script-manager-do-site.user.js
-// @version      0.7
+// @version      0.8
 // @icon         https://img.icons8.com/?size=100&id=LXhpSVCU82mF&format=png&color=000000
 // @description  Bloqueia scripts externos por host usando chave estável (origin+pathname).
 // @author       lourencosv (GPT)
@@ -15,55 +15,107 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
 // @grant        GM_addStyle
 // ==/UserScript==
 
 (() => {
   'use strict';
 
-  // Evita double-run no MESMO documento. Não impede reexecução em navegação real.
-  if (window.__VINI_SM_LOADED__) return;
+  const alreadyLoaded = Boolean(window.__VINI_SM_LOADED__);
   window.__VINI_SM_LOADED__ = true;
 
   const HOST = location.hostname || '(sem-host)';
-  const IS_TOP = (() => { try { return window.top === window.self; } catch { return true; } })();
-
-  // =========================
-  // Storage
-  // =========================
-  const SITE_KEY = (host) => `blockedScripts:${host}`;
-  const INDEX_KEY = 'blockedIndex';
-
-  function loadIndex() {
-    const raw = GM_getValue(INDEX_KEY, '{}');
+  const IS_TOP = (() => {
     try {
-      const obj = JSON.parse(raw);
-      return (obj && typeof obj === 'object') ? obj : {};
+      return window.top === window.self;
     } catch {
-      return {};
+      return true;
+    }
+  })();
+
+  const SITE_KEY = (host) => `blockedScripts:${host}`;
+  const INLINE_SITE_KEY = (host) => `blockedInlineScripts:${host}`;
+  const INDEX_KEY = 'blockedIndex';
+  const INLINE_INDEX_KEY = 'blockedInlineIndex';
+  const EXCLUDED_KEY = 'excludedHosts';
+
+  function parseJson(raw, fallback) {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : fallback;
+    } catch {
+      return fallback;
     }
   }
+
+  function loadIndex() {
+    return parseJson(GM_getValue(INDEX_KEY, '{}'), {});
+  }
+
   function saveIndex(indexObj) {
     GM_setValue(INDEX_KEY, JSON.stringify(indexObj));
   }
+
   function loadBlockedForHost(host) {
-    const raw = GM_getValue(SITE_KEY(host), '[]');
-    try { return new Set(JSON.parse(raw)); } catch { return new Set(); }
+    const arr = parseJson(GM_getValue(SITE_KEY(host), '[]'), []);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
   }
+
   function saveBlockedForHost(host, set) {
-    GM_setValue(SITE_KEY(host), JSON.stringify([...set]));
-    const index = loadIndex();
     const arr = [...set];
+    GM_setValue(SITE_KEY(host), JSON.stringify(arr));
+    const index = loadIndex();
     if (arr.length === 0) delete index[host];
     else index[host] = arr;
     saveIndex(index);
   }
 
-  let blocked = loadBlockedForHost(HOST);
+  function loadInlineIndex() {
+    return parseJson(GM_getValue(INLINE_INDEX_KEY, '{}'), {});
+  }
 
-  // =========================
-  // Normalização / chaves
-  // =========================
+  function saveInlineIndex(indexObj) {
+    GM_setValue(INLINE_INDEX_KEY, JSON.stringify(indexObj));
+  }
+
+  function loadBlockedInlineForHost(host) {
+    const arr = parseJson(GM_getValue(INLINE_SITE_KEY(host), '[]'), []);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  }
+
+  function saveBlockedInlineForHost(host, set) {
+    const arr = [...set];
+    GM_setValue(INLINE_SITE_KEY(host), JSON.stringify(arr));
+    const index = loadInlineIndex();
+    if (arr.length === 0) delete index[host];
+    else index[host] = arr;
+    saveInlineIndex(index);
+  }
+
+  function loadExcludedHosts() {
+    const arr = parseJson(GM_getValue(EXCLUDED_KEY, '[]'), []);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  }
+
+  function saveExcludedHosts(set) {
+    GM_setValue(EXCLUDED_KEY, JSON.stringify([...set].sort()));
+  }
+
+  let blocked = loadBlockedForHost(HOST);
+  let blockedInline = loadBlockedInlineForHost(HOST);
+  let excludedHosts = loadExcludedHosts();
+
+  function isHostExcluded(host) {
+    return excludedHosts.has(host);
+  }
+
+  function setHostExcluded(host, enabled) {
+    if (enabled) excludedHosts.add(host);
+    else excludedHosts.delete(host);
+    saveExcludedHosts(excludedHosts);
+  }
+
   function srcKey(src) {
     try {
       const u = new URL(src, location.href);
@@ -72,8 +124,13 @@
       return String(src || '').trim();
     }
   }
+
   function fullHref(src) {
-    try { return new URL(src, location.href).href; } catch { return String(src || '').trim(); }
+    try {
+      return new URL(src, location.href).href;
+    } catch {
+      return String(src || '').trim();
+    }
   }
 
   function hash(str) {
@@ -85,34 +142,43 @@
     return (h >>> 0).toString(16);
   }
 
+  function inlineKeyFromCode(code) {
+    const text = String(code || '').trim();
+    return `inline:${hash(text)}`;
+  }
+
   function describeScript(el) {
     const src = el.getAttribute('src');
     if (src) {
       return { kind: 'external', href: fullHref(src), key: srcKey(src) };
     }
     const code = (el.textContent || '').trim();
-    const preview = code.slice(0, 200).replace(/\s+/g, ' ');
-    const id = `inline:${hash(code)}:${preview.slice(0, 40)}`;
-    return { kind: 'inline', id, preview, size: code.length };
+    const preview = code.slice(0, 180).replace(/\s+/g, ' ');
+    const key = inlineKeyFromCode(code);
+    return {
+      kind: 'inline',
+      key,
+      id: `${key}:${preview.slice(0, 36)}`,
+      preview,
+      size: code.length,
+    };
   }
 
   function isBlockedScriptElement(el) {
     const src = el?.getAttribute?.('src');
-    if (!src) return false;
-    return blocked.has(srcKey(src));
+    if (src) return blocked.has(srcKey(src));
+    const code = (el?.textContent || '').trim();
+    return blockedInline.has(inlineKeyFromCode(code));
   }
 
   function neutralizeScript(el) {
     try {
       el.type = 'text/plain';
-      el.setAttribute('data-tm-blocked', '1');
+      el.setAttribute('data-sm-blocked', '1');
       if (el.parentNode) el.parentNode.removeChild(el);
     } catch {}
   }
 
-  // =========================
-  // Bloqueio: interceptors
-  // =========================
   function installInterceptors() {
     const origAppendChild = Node.prototype.appendChild;
     const origInsertBefore = Node.prototype.insertBefore;
@@ -127,22 +193,19 @@
       return null;
     }
 
-    Node.prototype.appendChild = function(node) {
+    Node.prototype.appendChild = function appendChildIntercept(node) {
       const r = intercept(node);
       if (r) return r;
       return origAppendChild.call(this, node);
     };
 
-    Node.prototype.insertBefore = function(node, ref) {
+    Node.prototype.insertBefore = function insertBeforeIntercept(node, ref) {
       const r = intercept(node);
       if (r) return r;
       return origInsertBefore.call(this, node, ref);
     };
   }
 
-  // =========================
-  // Bloqueio: MutationObserver
-  // =========================
   function installMutationBlocker() {
     const tryBlockNode = (node) => {
       if (!node) return;
@@ -150,11 +213,10 @@
         neutralizeScript(node);
         return;
       }
-      if (node.querySelectorAll) {
-        const scripts = node.querySelectorAll('script[src]');
-        for (const s of scripts) {
-          if (isBlockedScriptElement(s)) neutralizeScript(s);
-        }
+      if (!node.querySelectorAll) return;
+      const scripts = node.querySelectorAll('script');
+      for (const s of scripts) {
+        if (isBlockedScriptElement(s)) neutralizeScript(s);
       }
     };
 
@@ -168,31 +230,26 @@
       const root = document.documentElement || document;
       obs.observe(root, { childList: true, subtree: true });
       try {
-        document.querySelectorAll('script[src]').forEach(s => {
+        document.querySelectorAll('script').forEach((s) => {
           if (isBlockedScriptElement(s)) neutralizeScript(s);
         });
       } catch {}
     };
 
-    if (document.documentElement) start();
-    else new MutationObserver(() => { if (document.documentElement) start(); })
-      .observe(document, { childList: true, subtree: true });
+    if (document.documentElement) {
+      start();
+    } else {
+      new MutationObserver(() => {
+        if (document.documentElement) start();
+      }).observe(document, { childList: true, subtree: true });
+    }
   }
 
-  installInterceptors();
-  installMutationBlocker();
-
-  // Em iframe: mantém bloqueio. A UI fica no topo, mas vamos dar opção de listar frames same-origin a partir do topo.
-  if (!IS_TOP) return;
-
-  // =========================
-  // Trava de navegação enquanto painel aberto
-  // =========================
   const navLock = (() => {
     let active = false;
-    let pending = null; // { type, url }
+    let pending = null;
     let restoreFns = [];
-    let removedMeta = []; // [{node, content}]
+    let removedMeta = [];
     let statusCb = null;
 
     function setStatus(msg) {
@@ -200,12 +257,12 @@
     }
 
     function parseMetaRefresh(content) {
-      // Ex: "0; url=https://example.com"
       const m = String(content || '').match(/^\s*(\d+)\s*;\s*url\s*=\s*(.+)\s*$/i);
       if (!m) return null;
-      const seconds = Number(m[1] || 0);
-      const url = (m[2] || '').replace(/^['"]|['"]$/g, '');
-      return { seconds, url };
+      return {
+        seconds: Number(m[1] || 0),
+        url: (m[2] || '').replace(/^['"]|['"]$/g, ''),
+      };
     }
 
     function disableMetaRefresh() {
@@ -214,12 +271,11 @@
         for (const meta of metas) {
           const content = meta.getAttribute('content') || '';
           const parsed = parseMetaRefresh(content);
-          if (parsed && parsed.url) {
-            removedMeta.push({ node: meta, content });
-            meta.parentNode && meta.parentNode.removeChild(meta);
-            pending = pending || { type: 'meta-refresh', url: new URL(parsed.url, location.href).href };
-            setStatus('Redirecionamento (meta refresh) adiado até fechar o painel.');
-          }
+          if (!parsed || !parsed.url) continue;
+          removedMeta.push({ node: meta, content });
+          meta.parentNode && meta.parentNode.removeChild(meta);
+          pending = pending || { type: 'meta-refresh', url: new URL(parsed.url, location.href).href };
+          setStatus('Redirecionamento adiado até fechar o painel.');
         }
       } catch {}
     }
@@ -228,7 +284,9 @@
       const orig = obj[prop];
       if (typeof orig !== 'function') return;
       obj[prop] = wrapper(orig);
-      restoreFns.push(() => { obj[prop] = orig; });
+      restoreFns.push(() => {
+        obj[prop] = orig;
+      });
     }
 
     function start(onStatus) {
@@ -239,43 +297,40 @@
       restoreFns = [];
       statusCb = onStatus || null;
 
-      // 1) Intercepta location.assign/replace (mais comum em páginas de redirect)
       try {
-        wrap(window.location, 'assign', (orig) => function(url) {
+        wrap(window.location, 'assign', (orig) => function assignIntercept(url) {
           if (!active) return orig.call(this, url);
           pending = { type: 'location.assign', url: new URL(String(url), location.href).href };
-          setStatus('Redirecionamento (location.assign) adiado até fechar o painel.');
+          setStatus('Navegação adiada até fechar o painel.');
         });
-        wrap(window.location, 'replace', (orig) => function(url) {
+        wrap(window.location, 'replace', (orig) => function replaceIntercept(url) {
           if (!active) return orig.call(this, url);
           pending = { type: 'location.replace', url: new URL(String(url), location.href).href };
-          setStatus('Redirecionamento (location.replace) adiado até fechar o painel.');
+          setStatus('Navegação adiada até fechar o painel.');
         });
       } catch {}
 
-      // 2) Intercepta history (SPAs às vezes fazem “redirect” via state)
       try {
-        wrap(history, 'pushState', (orig) => function(state, title, url) {
+        wrap(history, 'pushState', (orig) => function pushStateIntercept(state, title, url) {
           if (!active) return orig.apply(this, arguments);
           if (url != null) {
             pending = { type: 'history.pushState', url: new URL(String(url), location.href).href };
-            setStatus('Navegação (pushState) adiada até fechar o painel.');
+            setStatus('Navegação adiada até fechar o painel.');
             return;
           }
           return orig.apply(this, arguments);
         });
-        wrap(history, 'replaceState', (orig) => function(state, title, url) {
+        wrap(history, 'replaceState', (orig) => function replaceStateIntercept(state, title, url) {
           if (!active) return orig.apply(this, arguments);
           if (url != null) {
             pending = { type: 'history.replaceState', url: new URL(String(url), location.href).href };
-            setStatus('Navegação (replaceState) adiada até fechar o painel.');
+            setStatus('Navegação adiada até fechar o painel.');
             return;
           }
           return orig.apply(this, arguments);
         });
       } catch {}
 
-      // 3) Desativa meta refresh
       disableMetaRefresh();
     }
 
@@ -283,10 +338,13 @@
       if (!active) return null;
       active = false;
 
-      for (const r of restoreFns) { try { r(); } catch {} }
+      for (const r of restoreFns) {
+        try {
+          r();
+        } catch {}
+      }
       restoreFns = [];
 
-      // Se removemos meta refresh, reanexa só se NÃO houver pending (porque vamos navegar nós mesmos)
       if (!pending) {
         for (const it of removedMeta) {
           try {
@@ -304,75 +362,250 @@
       return p;
     }
 
-    function isActive() { return active; }
-
-    return { start, stop, isActive };
+    return { start, stop };
   })();
 
-  // =========================
-  // UI (CLEAN/LIGHT)
-  // =========================
   function ensureStyles() {
     GM_addStyle(`
-      :root{
-        --sm-bg:#f7f7f8; --sm-surface:#fff; --sm-text:#111827; --sm-muted:#6b7280; --sm-border:#e5e7eb;
-        --sm-shadow:0 18px 60px rgba(17,24,39,.18); --sm-focus:rgba(59,130,246,.25);
-        --sm-accent:#2563eb; --sm-accent-weak:rgba(37,99,235,.10);
-        --sm-warn:#b45309; --sm-warn-weak:rgba(245,158,11,.18);
-        --sm-danger:#b91c1c; --sm-danger-weak:rgba(239,68,68,.12);
-        --sm-radius:14px; --sm-radius-sm:10px;
-        --sm-font:12.5px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      #sm-overlay {
+        --sm-bg:#f3f5f8;
+        --sm-card:#ffffff;
+        --sm-card-2:#f8fafc;
+        --sm-text:#0b1220;
+        --sm-muted:#5b6b81;
+        --sm-border:#dde4ee;
+        --sm-shadow:0 24px 80px rgba(11, 18, 32, 0.24);
+        --sm-focus:0 0 0 4px rgba(14, 116, 255, 0.18);
+        --sm-accent:#0e74ff;
+        --sm-accent-soft:#e9f2ff;
+        --sm-danger:#b42318;
+        --sm-danger-soft:#fef0f0;
+        --sm-warn:#9a6700;
+        --sm-warn-soft:#fff8eb;
+        --sm-radius:16px;
+        --sm-radius-sm:10px;
+        --sm-font:13px/1.46 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       }
-      #vini-sm-overlay{position:fixed; inset:0; z-index:2147483647; background:rgba(17,24,39,.35); backdrop-filter:blur(2px);}
-      #vini-sm-panel{
-        position:fixed; top:8vh; left:50%; transform:translateX(-50%);
-        width:min(980px,94vw); max-height:84vh; overflow:auto;
-        background:var(--sm-surface); color:var(--sm-text);
-        border:1px solid var(--sm-border); border-radius:var(--sm-radius);
-        box-shadow:var(--sm-shadow); padding:14px; font:var(--sm-font);
+      #sm-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        background: rgba(11, 18, 32, 0.45);
+        backdrop-filter: blur(3px);
+        color: var(--sm-text);
+        font: var(--sm-font);
       }
-      #vini-sm-head{position:sticky; top:0; background:var(--sm-surface); padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid var(--sm-border); z-index:2;}
-      .vini-sm-headbar{display:flex; gap:10px; align-items:center; justify-content:space-between;}
-      #vini-sm-title{font-size:13px; font-weight:650; letter-spacing:.2px;}
-      .vini-sm-sub{margin-top:6px; color:var(--sm-muted); font-size:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
-      #vini-sm-close{cursor:pointer; padding:7px 10px; border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border); background:var(--sm-bg); color:var(--sm-text);}
-      #vini-sm-close:hover{border-color:#d1d5db;}
-      .vini-sm-controls{display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; align-items:center;}
-      #vini-sm-search{
-        flex:1; min-width:260px; box-sizing:border-box; padding:9px 10px;
-        border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border);
-        background:#fff; color:var(--sm-text); outline:none;
+      #sm-overlay, #sm-overlay * {
+        box-sizing: border-box;
       }
-      #vini-sm-search:focus{border-color:#93c5fd; box-shadow:0 0 0 4px var(--sm-focus);}
-      .vini-sm-btn{cursor:pointer; padding:8px 10px; border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border); background:var(--sm-bg); color:var(--sm-text); white-space:nowrap;}
-      .vini-sm-btn:hover{border-color:#d1d5db;}
-      .vini-sm-btn-danger{border-color:rgba(185,28,28,.25); background:var(--sm-danger-weak); color:var(--sm-danger);}
-      .vini-sm-section{margin-top:12px; border:1px solid var(--sm-border); border-radius:var(--sm-radius); overflow:hidden; background:#fff;}
-      .vini-sm-section h3{margin:0; padding:10px 12px; font-size:12.5px; font-weight:650; background:var(--sm-bg); border-bottom:1px solid var(--sm-border); display:flex; align-items:center; justify-content:space-between; gap:10px;}
-      .vini-sm-row{padding:10px 12px; border-bottom:1px solid var(--sm-border); display:flex; flex-direction:column; gap:6px;}
-      .vini-sm-row:last-child{border-bottom:none;}
-      .vini-sm-src{word-break:break-all; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:12px; color:var(--sm-text);}
-      .vini-sm-meta{color:var(--sm-muted); font-size:11.5px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
-      .vini-sm-actions{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:2px;}
-      .vini-sm-toggle{cursor:pointer; padding:7px 10px; border-radius:var(--sm-radius-sm); border:1px solid var(--sm-border); background:#fff; color:var(--sm-text);}
-      .vini-sm-toggle:hover{border-color:#d1d5db;}
-      .vini-sm-toggle-on{border-color:rgba(37,99,235,.35); background:var(--sm-accent-weak); color:var(--sm-accent); font-weight:650;}
-      details.vini-sm-details{border-top:1px solid var(--sm-border);}
-      details.vini-sm-details>summary{cursor:pointer; list-style:none; padding:10px 12px; background:#fff; display:flex; align-items:center; justify-content:space-between; gap:10px; font-weight:650;}
-      details.vini-sm-details>summary::-webkit-details-marker{display:none;}
-      details.vini-sm-details[open]>summary{background:var(--sm-bg); border-bottom:1px solid var(--sm-border);}
-      .vini-sm-warn{padding:8px 10px; border:1px solid rgba(180,83,9,.25); background:var(--sm-warn-weak); border-radius:var(--sm-radius-sm); color:var(--sm-warn); font-size:11.5px;}
-      .vini-sm-status{padding:8px 10px; border:1px solid rgba(37,99,235,.25); background:rgba(37,99,235,.08); border-radius:var(--sm-radius-sm); color:var(--sm-accent); font-size:11.5px;}
-      /* Launcher */
-      #vini-sm-launcher{
-        position:fixed; right:12px; bottom:12px; z-index:2147483646;
-        border:1px solid var(--sm-border); background:var(--sm-surface);
-        color:var(--sm-text); border-radius:999px; box-shadow:0 10px 30px rgba(17,24,39,.14);
-        padding:8px 10px; font:var(--sm-font); cursor:pointer;
-        display:flex; gap:8px; align-items:center;
+      #sm-panel {
+        position: fixed;
+        left: 50%;
+        top: 5vh;
+        transform: translateX(-50%);
+        width: min(1020px, 96vw);
+        max-height: 90vh;
+        overflow: auto;
+        background: var(--sm-card);
+        color: var(--sm-text) !important;
+        border: 1px solid var(--sm-border);
+        border-radius: var(--sm-radius);
+        box-shadow: var(--sm-shadow);
+        font: var(--sm-font);
       }
-      #vini-sm-launcher:hover{border-color:#d1d5db;}
-      #vini-sm-launcher small{color:var(--sm-muted); font-size:11px;}
+      .sm-header {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        background: linear-gradient(180deg, #ffffff 0%, #ffffff 72%, rgba(255, 255, 255, 0.96) 100%);
+        border-bottom: 1px solid var(--sm-border);
+        padding: 14px;
+      }
+      .sm-topline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .sm-title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 750;
+        letter-spacing: 0.2px;
+        color: var(--sm-text) !important;
+      }
+      .sm-sub {
+        margin-top: 5px;
+        color: var(--sm-muted) !important;
+        font-size: 12px;
+      }
+      .sm-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .sm-input {
+        flex: 1;
+        min-width: 230px;
+        box-sizing: border-box;
+        border: 1px solid var(--sm-border);
+        border-radius: var(--sm-radius-sm);
+        padding: 9px 10px;
+        font: inherit;
+        color: var(--sm-text) !important;
+        background: #fff !important;
+        outline: none;
+      }
+      .sm-input:focus {
+        border-color: #74b2ff;
+        box-shadow: var(--sm-focus);
+      }
+      .sm-btn {
+        border: 1px solid var(--sm-border);
+        border-radius: var(--sm-radius-sm);
+        background: #fff !important;
+        color: var(--sm-text) !important;
+        padding: 8px 10px;
+        font: inherit;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: border-color .15s ease, background-color .15s ease, color .15s ease;
+      }
+      .sm-btn:hover { border-color: #bcc7d9; background: #f8fbff; }
+      .sm-btn-primary {
+        border-color: rgba(14, 116, 255, 0.28);
+        background: var(--sm-accent-soft) !important;
+        color: var(--sm-accent) !important;
+      }
+      .sm-btn-danger {
+        border-color: rgba(180, 35, 24, 0.26);
+        background: var(--sm-danger-soft) !important;
+        color: var(--sm-danger) !important;
+      }
+      .sm-body {
+        padding: 14px;
+        display: grid;
+        gap: 10px;
+        background: var(--sm-bg);
+      }
+      .sm-pillbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        color: var(--sm-muted) !important;
+        font-size: 12px;
+      }
+      .sm-pill {
+        border: 1px solid var(--sm-border);
+        border-radius: 999px;
+        padding: 4px 9px;
+        background: var(--sm-card) !important;
+        color: var(--sm-muted) !important;
+      }
+      .sm-note {
+        border: 1px solid rgba(154, 103, 0, 0.26);
+        background: var(--sm-warn-soft);
+        color: var(--sm-warn) !important;
+        border-radius: var(--sm-radius-sm);
+        padding: 8px 9px;
+        font-size: 12px;
+      }
+      .sm-status {
+        border: 1px solid rgba(14, 116, 255, 0.25);
+        background: var(--sm-accent-soft);
+        color: var(--sm-accent) !important;
+        border-radius: var(--sm-radius-sm);
+        padding: 8px 9px;
+        font-size: 12px;
+        display: none;
+        margin-top: 8px;
+      }
+      .sm-section {
+        border: 1px solid var(--sm-border);
+        border-radius: var(--sm-radius);
+        overflow: hidden;
+        background: var(--sm-card);
+      }
+      .sm-section-title {
+        margin: 0;
+        padding: 11px 12px;
+        font-size: 12.5px;
+        font-weight: 750;
+        border-bottom: 1px solid var(--sm-border);
+        background: var(--sm-card-2);
+        color: var(--sm-text) !important;
+        text-transform: none !important;
+        letter-spacing: 0 !important;
+      }
+      details.sm-accordion {
+        border-top: 1px solid var(--sm-border);
+      }
+      details.sm-accordion:first-of-type { border-top: 0; }
+      details.sm-accordion > summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        font-weight: 600;
+      }
+      details.sm-accordion > summary::-webkit-details-marker { display: none; }
+      details.sm-accordion[open] > summary {
+        background: var(--sm-card-2);
+        border-bottom: 1px solid var(--sm-border);
+      }
+      .sm-summary-left {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+      .sm-summary-title {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--sm-text) !important;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sm-summary-sub {
+        font-size: 11.5px;
+        color: var(--sm-muted) !important;
+      }
+      .sm-badge {
+        border: 1px solid var(--sm-border);
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 11px;
+        color: var(--sm-muted) !important;
+        background: #fff !important;
+      }
+      .sm-row {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--sm-border);
+        display: grid;
+        gap: 5px;
+      }
+      .sm-row:last-child { border-bottom: 0; }
+      .sm-mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 12px;
+        word-break: break-all;
+      }
+      .sm-meta { color: var(--sm-muted) !important; font-size: 12px; }
+      .sm-row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      .sm-empty {
+        padding: 18px 12px;
+        color: var(--sm-muted) !important;
+        font-size: 12px;
+      }
+      @media (max-width: 700px) {
+        #sm-panel { top: 2vh; max-height: 95vh; width: min(1020px, 98vw); }
+        .sm-header { padding: 12px; }
+        .sm-body { padding: 12px; }
+      }
     `);
   }
 
@@ -381,83 +614,89 @@
     else document.addEventListener('DOMContentLoaded', fn, { once: true });
   }
 
-  function openOverlay(titleText, { lockNavigation } = { lockNavigation: true }) {
-    if (document.getElementById('vini-sm-overlay')) return null;
+  function openOverlay(titleText, opts) {
+    const options = { lockNavigation: true, ...opts };
+    if (document.getElementById('sm-overlay')) return null;
     ensureStyles();
 
     const overlay = document.createElement('div');
-    overlay.id = 'vini-sm-overlay';
+    overlay.id = 'sm-overlay';
 
     const panel = document.createElement('div');
-    panel.id = 'vini-sm-panel';
+    panel.id = 'sm-panel';
 
-    const head = document.createElement('div');
-    head.id = 'vini-sm-head';
+    const header = document.createElement('div');
+    header.className = 'sm-header';
 
-    const bar = document.createElement('div');
-    bar.className = 'vini-sm-headbar';
+    const topline = document.createElement('div');
+    topline.className = 'sm-topline';
 
-    const title = document.createElement('div');
-    title.id = 'vini-sm-title';
+    const title = document.createElement('h2');
+    title.className = 'sm-title';
     title.textContent = titleText;
 
     const closeBtn = document.createElement('button');
-    closeBtn.id = 'vini-sm-close';
+    closeBtn.className = 'sm-btn';
+    closeBtn.type = 'button';
     closeBtn.textContent = 'Fechar';
 
     const status = document.createElement('div');
-    status.className = 'vini-sm-status';
-    status.style.display = 'none';
+    status.className = 'sm-status';
 
     function setStatus(msg) {
-      const t = String(msg || '').trim();
-      if (!t) { status.style.display = 'none'; status.textContent = ''; return; }
-      status.style.display = 'block';
-      status.textContent = t;
+      const text = String(msg || '').trim();
+      status.textContent = text;
+      status.style.display = text ? 'block' : 'none';
     }
 
     function closeOverlay() {
-      try { overlay.remove(); } catch {}
-      // Libera navegação e executa pendente (se houver)
-      if (lockNavigation) {
-        const p = navLock.stop();
-        if (p && p.url) {
-          // navega após fechar, como você pediu
-          try { window.location.href = p.url; } catch {}
+      try {
+        overlay.remove();
+      } catch {}
+      if (options.lockNavigation) {
+        const pending = navLock.stop();
+        if (pending && pending.url) {
+          try {
+            window.location.href = pending.url;
+          } catch {}
         }
       }
+      window.removeEventListener('keydown', onEsc, true);
     }
 
+    const onEsc = (e) => {
+      if (e.key === 'Escape') closeOverlay();
+    };
+
     closeBtn.addEventListener('click', closeOverlay);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(); });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeOverlay();
+    });
 
-    bar.appendChild(title);
-    bar.appendChild(closeBtn);
+    topline.appendChild(title);
+    topline.appendChild(closeBtn);
+    header.appendChild(topline);
+    header.appendChild(status);
 
-    head.appendChild(bar);
-    head.appendChild(status);
-
-    panel.appendChild(head);
+    panel.appendChild(header);
     overlay.appendChild(panel);
 
     whenDomReady(() => {
       (document.body || document.documentElement).appendChild(overlay);
     });
 
-    // Liga trava de navegação ao abrir
-    if (lockNavigation) navLock.start(setStatus);
+    window.addEventListener('keydown', onEsc, true);
 
-    // ESC fecha
-    const onKey = (e) => { if (e.key === 'Escape') closeOverlay(); };
-    window.addEventListener('keydown', onKey, true);
-    overlay.addEventListener('remove', () => window.removeEventListener('keydown', onKey, true), { once: true });
+    if (options.lockNavigation) navLock.start(setStatus);
 
-    return panel;
+    return { panel, header, body: (() => {
+      const body = document.createElement('div');
+      body.className = 'sm-body';
+      panel.appendChild(body);
+      return body;
+    })() };
   }
 
-  // =========================
-  // Coleta de scripts incluindo frames same-origin
-  // =========================
   function collectScriptsFromDoc(doc) {
     try {
       return Array.from(doc.querySelectorAll('script')).map(describeScript);
@@ -466,243 +705,296 @@
     }
   }
 
-  function collectScriptsIncludingFrames({ includeFrames }) {
-    const all = [];
+  function collectScriptsIncludingFrames(includeFrames) {
+    const described = [];
     const notes = [];
 
-    all.push(...collectScriptsFromDoc(document));
-
-    if (!includeFrames) return { described: all, notes };
+    described.push(...collectScriptsFromDoc(document));
+    if (!includeFrames) return { described, notes };
 
     const visited = new Set();
-
     function walk(win, path) {
       if (!win || visited.has(win)) return;
       visited.add(win);
 
       let doc;
-      try { doc = win.document; } catch {
-        notes.push(`Frame inacessível (cross-origin): ${path}`);
+      try {
+        doc = win.document;
+      } catch {
+        notes.push(`Frame cross-origin inacessivel: ${path}`);
         return;
       }
-      all.push(...collectScriptsFromDoc(doc));
+      described.push(...collectScriptsFromDoc(doc));
 
       let frames;
-      try { frames = win.frames; } catch { return; }
-      for (let i = 0; i < frames.length; i++) {
-        walk(frames[i], `${path}/${i}`);
+      try {
+        frames = win.frames;
+      } catch {
+        return;
       }
+      for (let i = 0; i < frames.length; i++) walk(frames[i], `${path}/${i}`);
     }
 
     walk(window, 'top');
-    return { described: all, notes };
+    return { described, notes };
   }
 
-  // =========================
-  // Panels
-  // =========================
-  function openSitePanel() {
-    const panel = openOverlay(`Scripts detectados em ${HOST}`, { lockNavigation: true });
-    if (!panel) return;
+  function hostFromHref(href) {
+    try {
+      return new URL(href).host || '(desconhecido)';
+    } catch {
+      return '(desconhecido)';
+    }
+  }
 
-    const head = panel.querySelector('#vini-sm-head');
+  function matchesQuery(script, q) {
+    if (!q) return true;
+    const haystack = [script.kind, script.href || '', script.key || '', script.id || '', script.preview || '']
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(q);
+  }
+
+  function createAccordionSummary(title, subtitle, badgeText) {
+    const summary = document.createElement('summary');
+
+    const left = document.createElement('div');
+    left.className = 'sm-summary-left';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'sm-summary-title';
+    titleEl.textContent = title;
+
+    const subEl = document.createElement('div');
+    subEl.className = 'sm-summary-sub';
+    subEl.textContent = subtitle;
+
+    const badge = document.createElement('span');
+    badge.className = 'sm-badge';
+    badge.textContent = badgeText;
+
+    left.appendChild(titleEl);
+    left.appendChild(subEl);
+    summary.appendChild(left);
+    summary.appendChild(badge);
+    return summary;
+  }
+
+  function openSitePanel() {
+    const ui = openOverlay(`Script Manager - ${HOST}`, { lockNavigation: true });
+    if (!ui) return;
 
     const sub = document.createElement('div');
-    sub.className = 'vini-sm-sub';
-    sub.textContent = 'Bloqueio por origin + pathname. Query/hash ignorados. Inline: só visualização.';
+    sub.className = 'sm-sub';
+    sub.textContent = 'Lista por site de origem. Clique no site para expandir os scripts.';
+    ui.header.appendChild(sub);
 
     const controls = document.createElement('div');
-    controls.className = 'vini-sm-controls';
+    controls.className = 'sm-controls';
 
     const search = document.createElement('input');
-    search.id = 'vini-sm-search';
-    search.placeholder = 'Filtrar (URL, domínio ou trecho)…';
+    search.className = 'sm-input';
+    search.placeholder = 'Filtrar por URL, dominio ou trecho';
 
     const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'vini-sm-btn';
-    refreshBtn.textContent = 'Recarregar lista';
+    refreshBtn.className = 'sm-btn';
+    refreshBtn.type = 'button';
+    refreshBtn.textContent = 'Recarregar';
 
-    const framesToggle = document.createElement('button');
-    framesToggle.className = 'vini-sm-btn';
-    framesToggle.textContent = 'Incluir frames: não';
-    let includeFrames = false;
+    const framesBtn = document.createElement('button');
+    framesBtn.className = 'sm-btn';
+    framesBtn.type = 'button';
+    framesBtn.textContent = 'Frames: nao';
 
     controls.appendChild(search);
     controls.appendChild(refreshBtn);
-    controls.appendChild(framesToggle);
+    controls.appendChild(framesBtn);
+    ui.header.appendChild(controls);
 
-    const warn = document.createElement('div');
-    warn.className = 'vini-sm-warn';
-    warn.textContent = 'Se você bloquear um script essencial (login/captcha/dependências), a página pode quebrar. Libere e recarregue.';
+    const warning = document.createElement('div');
+    warning.className = 'sm-note';
+    warning.textContent = 'Bloqueio externo usa origin + pathname. Inline usa hash do conteudo. Inline do HTML inicial pode executar antes do bloqueio.';
+    ui.body.appendChild(warning);
 
-    head.appendChild(sub);
-    head.appendChild(controls);
-    head.appendChild(warn);
+    const content = document.createElement('div');
+    ui.body.appendChild(content);
 
-    const container = document.createElement('div');
-    panel.appendChild(container);
-
-    function groupByOrigin(externals) {
-      const map = new Map();
-      for (const s of externals) {
-        let origin = '(desconhecido)';
-        try { origin = new URL(s.href).origin; } catch {}
-        if (!map.has(origin)) map.set(origin, []);
-        map.get(origin).push(s);
-      }
-      return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-    }
-
-    function matchesQuery(s, q) {
-      if (!q) return true;
-      const hay = [s.kind, s.href || '', s.key || '', s.id || '', s.preview || ''].join(' ').toLowerCase();
-      return hay.includes(q);
-    }
+    let includeFrames = false;
 
     function renderList() {
       const q = (search.value || '').trim().toLowerCase();
-      container.textContent = '';
+      content.textContent = '';
 
-      const { described, notes } = collectScriptsIncludingFrames({ includeFrames });
+      const { described, notes } = collectScriptsIncludingFrames(includeFrames);
+      const externalsAll = described.filter((s) => s.kind === 'external');
+      const inlineAll = described.filter((s) => s.kind === 'inline');
+      const externals = externalsAll.filter((s) => matchesQuery(s, q));
+      const inlines = inlineAll.filter((s) => matchesQuery(s, q));
 
-      const externalsAll = described.filter(s => s.kind === 'external');
-      const inlineAll = described.filter(s => s.kind === 'inline');
-
-      const externals = externalsAll.filter(s => matchesQuery(s, q));
-      const inlines = inlineAll.filter(s => matchesQuery(s, q));
-
-      const topInfo = document.createElement('div');
-      topInfo.className = 'vini-sm-sub';
-      topInfo.textContent =
-        `Total: ${described.length} | Externos: ${externalsAll.length} (no filtro: ${externals.length}) | Inline: ${inlineAll.length} (no filtro: ${inlines.length}) | Bloqueados neste host: ${blocked.size}`;
-      container.appendChild(topInfo);
+      const stats = document.createElement('div');
+      stats.className = 'sm-pillbar';
+      stats.innerHTML = [
+        `<span class="sm-pill">Total: ${described.length}</span>`,
+        `<span class="sm-pill">Externos: ${externalsAll.length} (filtro: ${externals.length})</span>`,
+        `<span class="sm-pill">Inline: ${inlineAll.length} (filtro: ${inlines.length})</span>`,
+        `<span class="sm-pill">Bloqueados externos: ${blocked.size}</span>`,
+        `<span class="sm-pill">Bloqueados inline: ${blockedInline.size}</span>`,
+      ].join('');
+      content.appendChild(stats);
 
       if (notes.length) {
-        const n = document.createElement('div');
-        n.className = 'vini-sm-warn';
-        n.textContent = notes.join(' | ');
-        container.appendChild(n);
+        const note = document.createElement('div');
+        note.className = 'sm-note';
+        note.textContent = notes.join(' | ');
+        content.appendChild(note);
       }
 
-      // Externos
-      const secExt = document.createElement('div');
-      secExt.className = 'vini-sm-section';
+      const extSection = document.createElement('section');
+      extSection.className = 'sm-section';
+      const extTitle = document.createElement('h3');
+      extTitle.className = 'sm-section-title';
+      extTitle.textContent = `Sites externos (${externals.length} scripts)`;
+      extSection.appendChild(extTitle);
 
-      const hExt = document.createElement('h3');
-      hExt.textContent = `Externos (agrupados por domínio): ${externals.length}`;
-      secExt.appendChild(hExt);
+      const bySite = new Map();
+      externals.forEach((s) => {
+        const host = hostFromHref(s.href);
+        if (!bySite.has(host)) bySite.set(host, []);
+        bySite.get(host).push(s);
+      });
 
-      const grouped = groupByOrigin(externals);
-      if (grouped.length === 0) {
+      const sortedSites = [...bySite.keys()].sort((a, b) => a.localeCompare(b));
+      if (sortedSites.length === 0) {
         const empty = document.createElement('div');
-        empty.className = 'vini-sm-row';
-        empty.textContent = 'Nenhum script externo corresponde ao filtro.';
-        secExt.appendChild(empty);
+        empty.className = 'sm-empty';
+        empty.textContent = 'Nenhum script externo corresponde ao filtro atual.';
+        extSection.appendChild(empty);
       } else {
-        for (const [origin, items] of grouped) {
-          const det = document.createElement('details');
-          det.className = 'vini-sm-details';
-          det.open = (q ? true : items.some(s => blocked.has(s.key)));
+        for (const site of sortedSites) {
+          const items = bySite.get(site).slice().sort((a, b) => (a.href || '').localeCompare(b.href || ''));
+          const blockedCount = items.filter((s) => blocked.has(s.key)).length;
 
-          const sum = document.createElement('summary');
-          const blockedCount = items.filter(s => blocked.has(s.key)).length;
-          sum.textContent = `${origin} • ${items.length} (${blockedCount} bloqueado(s))`;
-          det.appendChild(sum);
+          const details = document.createElement('details');
+          details.className = 'sm-accordion';
+          details.open = Boolean(q) || blockedCount > 0;
+          details.appendChild(
+            createAccordionSummary(
+              site,
+              `${items.length} script(s) neste site`,
+              `${blockedCount} bloqueado(s)`
+            )
+          );
 
-          items
-            .sort((a, b) => (a.href || '').localeCompare(b.href || ''))
-            .forEach((s) => {
-              const row = document.createElement('div');
-              row.className = 'vini-sm-row';
+          items.forEach((s) => {
+            const row = document.createElement('div');
+            row.className = 'sm-row';
 
-              const main = document.createElement('div');
-              main.className = 'vini-sm-src';
-              main.textContent = s.href;
+            const src = document.createElement('div');
+            src.className = 'sm-mono';
+            src.textContent = s.href;
 
-              const meta = document.createElement('div');
-              meta.className = 'vini-sm-meta';
-              meta.textContent = `chave: ${s.key} • estado: ${blocked.has(s.key) ? 'bloqueado' : 'liberado'}`;
+            const meta = document.createElement('div');
+            meta.className = 'sm-meta';
+            meta.textContent = `Chave: ${s.key} | Estado: ${blocked.has(s.key) ? 'bloqueado' : 'liberado'}`;
 
-              const actions = document.createElement('div');
-              actions.className = 'vini-sm-actions';
+            const actions = document.createElement('div');
+            actions.className = 'sm-row-actions';
 
-              const btn = document.createElement('button');
-              const isOn = blocked.has(s.key);
-              btn.className = 'vini-sm-toggle ' + (isOn ? 'vini-sm-toggle-on' : '');
-              btn.textContent = isOn ? 'Bloqueado (clique p/ liberar)' : 'Bloquear';
-
-              btn.addEventListener('click', () => {
-                const nowOn = !blocked.has(s.key);
-                if (nowOn) blocked.add(s.key);
-                else blocked.delete(s.key);
-                saveBlockedForHost(HOST, blocked);
-                blocked = loadBlockedForHost(HOST);
-                renderList();
-              });
-
-              actions.appendChild(btn);
-
-              row.appendChild(main);
-              row.appendChild(meta);
-              row.appendChild(actions);
-              det.appendChild(row);
+            const toggle = document.createElement('button');
+            const isOn = blocked.has(s.key);
+            toggle.type = 'button';
+            toggle.className = `sm-btn ${isOn ? 'sm-btn-primary' : ''}`;
+            toggle.textContent = isOn ? 'Liberar script' : 'Bloquear script';
+            toggle.addEventListener('click', () => {
+              if (blocked.has(s.key)) blocked.delete(s.key);
+              else blocked.add(s.key);
+              saveBlockedForHost(HOST, blocked);
+              blocked = loadBlockedForHost(HOST);
+              renderList();
             });
 
-          secExt.appendChild(det);
+            actions.appendChild(toggle);
+            row.appendChild(src);
+            row.appendChild(meta);
+            row.appendChild(actions);
+            details.appendChild(row);
+          });
+
+          extSection.appendChild(details);
         }
       }
-      container.appendChild(secExt);
+      content.appendChild(extSection);
 
-      // Inline
-      const secIn = document.createElement('div');
-      secIn.className = 'vini-sm-section';
-
-      const hIn = document.createElement('h3');
-      hIn.textContent = `Inline (somente visualização): ${inlines.length}`;
-      secIn.appendChild(hIn);
+      const inSection = document.createElement('section');
+      inSection.className = 'sm-section';
+      const inTitle = document.createElement('h3');
+      inTitle.className = 'sm-section-title';
+      inTitle.textContent = `Scripts inline (somente visualizacao): ${inlines.length}`;
+      inSection.appendChild(inTitle);
 
       if (inlines.length === 0) {
         const empty = document.createElement('div');
-        empty.className = 'vini-sm-row';
-        empty.textContent = 'Nenhum script inline corresponde ao filtro.';
-        secIn.appendChild(empty);
+        empty.className = 'sm-empty';
+        empty.textContent = 'Nenhum script inline corresponde ao filtro atual.';
+        inSection.appendChild(empty);
       } else {
-        const det = document.createElement('details');
-        det.className = 'vini-sm-details';
-        det.open = !!q;
+        const details = document.createElement('details');
+        details.className = 'sm-accordion';
+        details.open = Boolean(q);
 
-        const sum = document.createElement('summary');
-        sum.textContent = `Ver lista de inline (${inlines.length})`;
-        det.appendChild(sum);
+        details.appendChild(
+          createAccordionSummary(
+            'Scripts inline',
+            'Conteudo nao bloqueavel por URL',
+            `${inlines.length} item(ns)`
+          )
+        );
 
         inlines.forEach((s) => {
           const row = document.createElement('div');
-          row.className = 'vini-sm-row';
+          row.className = 'sm-row';
 
-          const main = document.createElement('div');
-          main.className = 'vini-sm-src';
-          main.textContent = `[inline] ${s.id}`;
+          const id = document.createElement('div');
+          id.className = 'sm-mono';
+          id.textContent = `[inline] ${s.id}`;
 
           const meta = document.createElement('div');
-          meta.className = 'vini-sm-meta';
-          meta.textContent = `tamanho: ${s.size} chars • preview: ${s.preview ? s.preview.slice(0, 160) : ''}`;
+          meta.className = 'sm-meta';
+          meta.textContent = `Hash: ${s.key} | Tamanho: ${s.size} chars | Preview: ${(s.preview || '').slice(0, 130)}`;
 
-          row.appendChild(main);
+          const actions = document.createElement('div');
+          actions.className = 'sm-row-actions';
+
+          const toggle = document.createElement('button');
+          const isOn = blockedInline.has(s.key);
+          toggle.type = 'button';
+          toggle.className = `sm-btn ${isOn ? 'sm-btn-primary' : ''}`;
+          toggle.textContent = isOn ? 'Liberar inline' : 'Bloquear inline';
+          toggle.addEventListener('click', () => {
+            if (blockedInline.has(s.key)) blockedInline.delete(s.key);
+            else blockedInline.add(s.key);
+            saveBlockedInlineForHost(HOST, blockedInline);
+            blockedInline = loadBlockedInlineForHost(HOST);
+            renderList();
+          });
+
+          row.appendChild(id);
           row.appendChild(meta);
-          det.appendChild(row);
+          actions.appendChild(toggle);
+          row.appendChild(actions);
+          details.appendChild(row);
         });
 
-        secIn.appendChild(det);
+        inSection.appendChild(details);
       }
-      container.appendChild(secIn);
+      content.appendChild(inSection);
     }
 
     search.addEventListener('input', renderList);
     refreshBtn.addEventListener('click', renderList);
-
-    framesToggle.addEventListener('click', () => {
+    framesBtn.addEventListener('click', () => {
       includeFrames = !includeFrames;
-      framesToggle.textContent = `Incluir frames: ${includeFrames ? 'sim' : 'não'}`;
+      framesBtn.textContent = `Frames: ${includeFrames ? 'sim' : 'nao'}`;
       renderList();
     });
 
@@ -710,145 +1002,215 @@
   }
 
   function openGlobalBlockedPanel() {
-    const panel = openOverlay('Scripts bloqueados (global)', { lockNavigation: false });
-    if (!panel) return;
-
-    const head = panel.querySelector('#vini-sm-head');
+    const ui = openOverlay('Bloqueios globais', { lockNavigation: false });
+    if (!ui) return;
 
     const sub = document.createElement('div');
-    sub.className = 'vini-sm-sub';
-    sub.textContent = 'Fonte: índice global sincronizado. Agrupado por host.';
+    sub.className = 'sm-sub';
+    sub.textContent = 'Visualizacao compacta por host. Clique no host para ver as chaves bloqueadas.';
+    ui.header.appendChild(sub);
 
     const controls = document.createElement('div');
-    controls.className = 'vini-sm-controls';
+    controls.className = 'sm-controls';
 
     const search = document.createElement('input');
-    search.id = 'vini-sm-search';
-    search.placeholder = 'Filtrar (host ou chave)…';
+    search.className = 'sm-input';
+    search.placeholder = 'Filtrar por host ou chave';
 
-    const clearAllBtn = document.createElement('button');
-    clearAllBtn.className = 'vini-sm-btn vini-sm-btn-danger';
-    clearAllBtn.textContent = 'Zerar tudo (global)';
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'sm-btn sm-btn-danger';
+    clearBtn.textContent = 'Zerar bloqueios globais';
 
     controls.appendChild(search);
-    controls.appendChild(clearAllBtn);
+    controls.appendChild(clearBtn);
+    ui.header.appendChild(controls);
 
-    head.appendChild(sub);
-    head.appendChild(controls);
-
-    const list = document.createElement('div');
-    panel.appendChild(list);
+    const content = document.createElement('div');
+    ui.body.appendChild(content);
 
     function render() {
       const q = (search.value || '').trim().toLowerCase();
-      list.textContent = '';
+      content.textContent = '';
 
       const index = loadIndex();
-      const hosts = Object.keys(index).sort();
+      const inlineIndex = loadInlineIndex();
+      const hosts = [...new Set([...Object.keys(index), ...Object.keys(inlineIndex)])].sort();
+      let totalExternal = 0;
+      let totalInline = 0;
+      hosts.forEach((h) => {
+        totalExternal += Array.isArray(index[h]) ? index[h].length : 0;
+        totalInline += Array.isArray(inlineIndex[h]) ? inlineIndex[h].length : 0;
+      });
 
-      let totalKeys = 0;
-      for (const h of hosts) totalKeys += (Array.isArray(index[h]) ? index[h].length : 0);
+      const stats = document.createElement('div');
+      stats.className = 'sm-pillbar';
+      stats.innerHTML = `<span class="sm-pill">Hosts: ${hosts.length}</span><span class="sm-pill">Externos: ${totalExternal}</span><span class="sm-pill">Inline: ${totalInline}</span>`;
+      content.appendChild(stats);
 
-      const info = document.createElement('div');
-      info.className = 'vini-sm-sub';
-      info.textContent = `Hosts: ${hosts.length} | Bloqueios: ${totalKeys}`;
-      list.appendChild(info);
+      const section = document.createElement('section');
+      section.className = 'sm-section';
+      const title = document.createElement('h3');
+      title.className = 'sm-section-title';
+      title.textContent = 'Hosts com bloqueios';
+      section.appendChild(title);
 
-      if (hosts.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'vini-sm-section';
-        const row = document.createElement('div');
-        row.className = 'vini-sm-row';
-        row.textContent = 'Nenhum bloqueio global registrado.';
-        empty.appendChild(row);
-        list.appendChild(empty);
-        return;
-      }
+      let anyVisible = false;
+      for (const host of hosts) {
+        const extKeys = (Array.isArray(index[host]) ? index[host] : []).slice().sort();
+        const inlKeys = (Array.isArray(inlineIndex[host]) ? inlineIndex[host] : []).slice().sort();
+        const visibleExt = extKeys.filter((k) => !q || host.toLowerCase().includes(q) || k.toLowerCase().includes(q));
+        const visibleInl = inlKeys.filter((k) => !q || host.toLowerCase().includes(q) || k.toLowerCase().includes(q));
+        if (visibleExt.length === 0 && visibleInl.length === 0) continue;
+        anyVisible = true;
 
-      for (const h of hosts) {
-        const keys = (Array.isArray(index[h]) ? index[h] : []).slice().sort();
-        const visibleKeys = keys.filter(k => {
-          if (!q) return true;
-          return h.toLowerCase().includes(q) || k.toLowerCase().includes(q);
-        });
-        if (visibleKeys.length === 0) continue;
-
-        const sec = document.createElement('div');
-        sec.className = 'vini-sm-section';
-
-        const det = document.createElement('details');
-        det.className = 'vini-sm-details';
-        det.open = !!q;
-
-        const sum = document.createElement('summary');
-        sum.textContent = `${h} • ${visibleKeys.length} bloqueado(s)`;
-        det.appendChild(sum);
+        const details = document.createElement('details');
+        details.className = 'sm-accordion';
+        details.open = Boolean(q);
+        details.appendChild(
+          createAccordionSummary(
+            host,
+            'Bloqueios externos e inline para este host',
+            `ext ${visibleExt.length} | inl ${visibleInl.length}`
+          )
+        );
 
         const actionRow = document.createElement('div');
-        actionRow.className = 'vini-sm-row';
-
+        actionRow.className = 'sm-row';
         const actions = document.createElement('div');
-        actions.className = 'vini-sm-actions';
+        actions.className = 'sm-row-actions';
 
         const clearHostBtn = document.createElement('button');
-        clearHostBtn.className = 'vini-sm-btn';
+        clearHostBtn.type = 'button';
+        clearHostBtn.className = 'sm-btn';
         clearHostBtn.textContent = 'Liberar todos deste host';
-
         clearHostBtn.addEventListener('click', () => {
-          saveBlockedForHost(h, new Set());
-          if (h === HOST) blocked = loadBlockedForHost(HOST);
+          saveBlockedForHost(host, new Set());
+          saveBlockedInlineForHost(host, new Set());
+          if (host === HOST) blocked = loadBlockedForHost(HOST);
+          if (host === HOST) blockedInline = loadBlockedInlineForHost(HOST);
           render();
         });
 
         actions.appendChild(clearHostBtn);
         actionRow.appendChild(actions);
-        det.appendChild(actionRow);
+        details.appendChild(actionRow);
 
-        visibleKeys.forEach((k) => {
+        if (visibleExt.length) {
+          const extHead = document.createElement('div');
+          extHead.className = 'sm-row';
+          const label = document.createElement('div');
+          label.className = 'sm-meta';
+          label.textContent = 'Scripts externos';
+          extHead.appendChild(label);
+          details.appendChild(extHead);
+        }
+
+        visibleExt.forEach((k) => {
           const row = document.createElement('div');
-          row.className = 'vini-sm-row';
+          row.className = 'sm-row';
 
           const meta = document.createElement('div');
-          meta.className = 'vini-sm-meta';
-          meta.textContent = 'chave bloqueada:';
+          meta.className = 'sm-meta';
+          meta.textContent = 'Chave externa bloqueada';
 
-          const keyText = document.createElement('div');
-          keyText.className = 'vini-sm-src';
-          keyText.textContent = k;
+          const key = document.createElement('div');
+          key.className = 'sm-mono';
+          key.textContent = k;
 
-          const itemActions = document.createElement('div');
-          itemActions.className = 'vini-sm-actions';
+          const rowActions = document.createElement('div');
+          rowActions.className = 'sm-row-actions';
 
-          const btn = document.createElement('button');
-          btn.className = 'vini-sm-toggle';
-          btn.textContent = 'Liberar';
-
-          btn.addEventListener('click', () => {
-            const set = loadBlockedForHost(h);
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'sm-btn';
+          removeBtn.textContent = 'Liberar';
+          removeBtn.addEventListener('click', () => {
+            const set = loadBlockedForHost(host);
             set.delete(k);
-            saveBlockedForHost(h, set);
-            if (h === HOST) blocked = loadBlockedForHost(HOST);
+            saveBlockedForHost(host, set);
+            if (host === HOST) blocked = loadBlockedForHost(HOST);
             render();
           });
 
-          itemActions.appendChild(btn);
-
+          rowActions.appendChild(removeBtn);
           row.appendChild(meta);
-          row.appendChild(keyText);
-          row.appendChild(itemActions);
-          det.appendChild(row);
+          row.appendChild(key);
+          row.appendChild(rowActions);
+          details.appendChild(row);
         });
 
-        sec.appendChild(det);
-        list.appendChild(sec);
+        if (visibleInl.length) {
+          const inlHead = document.createElement('div');
+          inlHead.className = 'sm-row';
+          const label = document.createElement('div');
+          label.className = 'sm-meta';
+          label.textContent = 'Scripts inline';
+          inlHead.appendChild(label);
+          details.appendChild(inlHead);
+        }
+
+        visibleInl.forEach((k) => {
+          const row = document.createElement('div');
+          row.className = 'sm-row';
+
+          const meta = document.createElement('div');
+          meta.className = 'sm-meta';
+          meta.textContent = 'Hash inline bloqueado';
+
+          const key = document.createElement('div');
+          key.className = 'sm-mono';
+          key.textContent = k;
+
+          const rowActions = document.createElement('div');
+          rowActions.className = 'sm-row-actions';
+
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'sm-btn';
+          removeBtn.textContent = 'Liberar inline';
+          removeBtn.addEventListener('click', () => {
+            const set = loadBlockedInlineForHost(host);
+            set.delete(k);
+            saveBlockedInlineForHost(host, set);
+            if (host === HOST) blockedInline = loadBlockedInlineForHost(HOST);
+            render();
+          });
+
+          rowActions.appendChild(removeBtn);
+          row.appendChild(meta);
+          row.appendChild(key);
+          row.appendChild(rowActions);
+          details.appendChild(row);
+        });
+
+        section.appendChild(details);
       }
+
+      if (!anyVisible) {
+        const row = document.createElement('div');
+        row.className = 'sm-empty';
+        row.textContent = hosts.length === 0
+          ? 'Nenhum bloqueio global registrado.'
+          : 'Nenhum item corresponde ao filtro atual.';
+        section.appendChild(row);
+      }
+
+      content.appendChild(section);
     }
 
-    clearAllBtn.addEventListener('click', () => {
+    clearBtn.addEventListener('click', () => {
       const index = loadIndex();
-      for (const h of Object.keys(index)) saveBlockedForHost(h, new Set());
+      const inlineIndex = loadInlineIndex();
+      const hosts = [...new Set([...Object.keys(index), ...Object.keys(inlineIndex)])];
+      hosts.forEach((h) => {
+        saveBlockedForHost(h, new Set());
+        saveBlockedInlineForHost(h, new Set());
+      });
       GM_setValue(INDEX_KEY, '{}');
+      GM_setValue(INLINE_INDEX_KEY, '{}');
       blocked = loadBlockedForHost(HOST);
+      blockedInline = loadBlockedInlineForHost(HOST);
       render();
     });
 
@@ -856,41 +1218,166 @@
     render();
   }
 
-  // =========================
-  // Launcher (evita “sumir” em algumas páginas)
-  // =========================
-  function ensureLauncher() {
-    if (document.getElementById('vini-sm-launcher')) return;
-    ensureStyles();
+  function openExcludedHostsPanel() {
+    const ui = openOverlay('Sites excluidos do Script Manager', { lockNavigation: false });
+    if (!ui) return;
 
-    const btn = document.createElement('button');
-    btn.id = 'vini-sm-launcher';
-    btn.type = 'button';
-    btn.innerHTML = `<strong>SM</strong> <small>${HOST}</small>`;
-    btn.addEventListener('click', () => openSitePanel());
+    const sub = document.createElement('div');
+    sub.className = 'sm-sub';
+    sub.textContent = 'Hosts excluidos ficam totalmente fora dos efeitos do script.';
+    ui.header.appendChild(sub);
 
-    whenDomReady(() => {
-      (document.body || document.documentElement).appendChild(btn);
+    const controls = document.createElement('div');
+    controls.className = 'sm-controls';
+
+    const search = document.createElement('input');
+    search.className = 'sm-input';
+    search.placeholder = 'Filtrar host excluido';
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'sm-btn sm-btn-danger';
+    clearBtn.textContent = 'Remover todas as exclusoes';
+
+    controls.appendChild(search);
+    controls.appendChild(clearBtn);
+    ui.header.appendChild(controls);
+
+    const content = document.createElement('div');
+    ui.body.appendChild(content);
+
+    function render() {
+      const q = (search.value || '').trim().toLowerCase();
+      const all = [...loadExcludedHosts()].sort();
+
+      content.textContent = '';
+
+      const stats = document.createElement('div');
+      stats.className = 'sm-pillbar';
+      stats.innerHTML = `<span class="sm-pill">Total excluidos: ${all.length}</span>`;
+      content.appendChild(stats);
+
+      const section = document.createElement('section');
+      section.className = 'sm-section';
+      const title = document.createElement('h3');
+      title.className = 'sm-section-title';
+      title.textContent = 'Hosts excluidos';
+      section.appendChild(title);
+
+      const visible = all.filter((h) => !q || h.toLowerCase().includes(q));
+      if (visible.length === 0) {
+        const row = document.createElement('div');
+        row.className = 'sm-empty';
+        row.textContent = all.length === 0
+          ? 'Nenhum host excluido.'
+          : 'Nenhum host corresponde ao filtro atual.';
+        section.appendChild(row);
+      } else {
+        visible.forEach((host) => {
+          const details = document.createElement('details');
+          details.className = 'sm-accordion';
+          details.appendChild(
+            createAccordionSummary(
+              host,
+              'Este host esta totalmente ignorado pelo script',
+              'excluido'
+            )
+          );
+
+          const row = document.createElement('div');
+          row.className = 'sm-row';
+          const actions = document.createElement('div');
+          actions.className = 'sm-row-actions';
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'sm-btn';
+          removeBtn.textContent = 'Reativar host';
+          removeBtn.addEventListener('click', () => {
+            setHostExcluded(host, false);
+            if (host === HOST) excludedHosts = loadExcludedHosts();
+            render();
+          });
+          actions.appendChild(removeBtn);
+          row.appendChild(actions);
+          details.appendChild(row);
+          section.appendChild(details);
+        });
+      }
+
+      content.appendChild(section);
+    }
+
+    clearBtn.addEventListener('click', () => {
+      excludedHosts = new Set();
+      saveExcludedHosts(excludedHosts);
+      render();
     });
+
+    search.addEventListener('input', render);
+    render();
   }
 
-  // Recria launcher se algum script do site tentar removê-lo.
-  function keepLauncherAlive() {
-    whenDomReady(() => {
-      ensureLauncher();
-      const obs = new MutationObserver(() => ensureLauncher());
-      obs.observe(document.documentElement || document, { childList: true, subtree: true });
-    });
+  function toggleCurrentHostExclusion() {
+    const currentlyExcluded = isHostExcluded(HOST);
+    setHostExcluded(HOST, !currentlyExcluded);
+    const nowExcluded = !currentlyExcluded;
+    registerMenuCommands();
+    alert(
+      nowExcluded
+        ? `Host excluido: ${HOST}\nA partir do proximo carregamento, o script nao vai atuar neste site.`
+        : `Host reativado: ${HOST}\nRecarregue para voltar a aplicar os bloqueios.`
+    );
   }
 
-  // =========================
-  // Menu Tampermonkey (topo)
-  // =========================
-  GM_registerMenuCommand('Abrir painel de scripts (este site)', openSitePanel);
-  GM_registerMenuCommand('Gerenciar scripts bloqueados (global)', openGlobalBlockedPanel);
-  GM_registerMenuCommand('Ping (diagnóstico)', () => {
-    alert(`Script Manager carregou.\nTopo: ${IS_TOP ? 'sim' : 'não'} | Host: ${HOST}`);
-  });
+  function exclusionToggleMenuLabel() {
+    return isHostExcluded(HOST)
+      ? 'Reativar este site nos efeitos do script'
+      : 'Excluir este site dos efeitos do script';
+  }
 
-  keepLauncherAlive();
+  function registerMenuCommands() {
+    const prevIds = Array.isArray(window.__VINI_SM_MENU_IDS__) ? window.__VINI_SM_MENU_IDS__ : [];
+    if (typeof GM_unregisterMenuCommand === 'function') {
+      prevIds.forEach((id) => {
+        try {
+          GM_unregisterMenuCommand(id);
+        } catch {}
+      });
+    }
+
+    const ids = [];
+    const excluded = isHostExcluded(HOST);
+
+    if (!excluded) {
+      ids.push(GM_registerMenuCommand('Abrir painel de scripts (este site)', openSitePanel));
+      ids.push(GM_registerMenuCommand('Gerenciar scripts bloqueados (global)', openGlobalBlockedPanel));
+      ids.push(
+        GM_registerMenuCommand('Ping (diagnostico)', () => {
+          alert(`Script Manager carregou. Topo: ${IS_TOP ? 'sim' : 'nao'} | Host: ${HOST}`);
+        })
+      );
+    }
+
+    ids.push(GM_registerMenuCommand(exclusionToggleMenuLabel(), toggleCurrentHostExclusion));
+    ids.push(GM_registerMenuCommand('Gerenciar sites excluidos', openExcludedHostsPanel));
+    window.__VINI_SM_MENU_IDS__ = ids;
+  }
+
+  if (alreadyLoaded) return;
+
+  if (!IS_TOP) {
+    if (isHostExcluded(HOST)) return;
+    installInterceptors();
+    installMutationBlocker();
+    return;
+  }
+
+  registerMenuCommands();
+
+  if (isHostExcluded(HOST)) {
+    return;
+  }
+
+  installInterceptors();
+  installMutationBlocker();
 })();
