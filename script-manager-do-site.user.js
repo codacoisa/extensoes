@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Script Manager do Site
 // @namespace    script-manager-do-site.user.js
-// @version      0.8
+// @version      0.9
 // @icon         https://img.icons8.com/?size=100&id=LXhpSVCU82mF&format=png&color=000000
 // @description  Bloqueia scripts externos por host usando chave estável (origin+pathname).
 // @author       lourencosv (GPT)
@@ -42,8 +42,8 @@
 
   function parseJson(raw, fallback) {
     try {
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? parsed : fallback;
+      const value = JSON.parse(raw);
+      return value && typeof value === 'object' ? value : fallback;
     } catch {
       return fallback;
     }
@@ -53,49 +53,55 @@
     return parseJson(GM_getValue(INDEX_KEY, '{}'), {});
   }
 
-  function saveIndex(indexObj) {
-    GM_setValue(INDEX_KEY, JSON.stringify(indexObj));
-  }
-
-  function loadBlockedForHost(host) {
-    const arr = parseJson(GM_getValue(SITE_KEY(host), '[]'), []);
-    return Array.isArray(arr) ? new Set(arr) : new Set();
-  }
-
-  function saveBlockedForHost(host, set) {
-    const arr = [...set];
-    GM_setValue(SITE_KEY(host), JSON.stringify(arr));
-    const index = loadIndex();
-    if (arr.length === 0) delete index[host];
-    else index[host] = arr;
-    saveIndex(index);
+  function saveIndex(value) {
+    GM_setValue(INDEX_KEY, JSON.stringify(value));
   }
 
   function loadInlineIndex() {
     return parseJson(GM_getValue(INLINE_INDEX_KEY, '{}'), {});
   }
 
-  function saveInlineIndex(indexObj) {
-    GM_setValue(INLINE_INDEX_KEY, JSON.stringify(indexObj));
+  function saveInlineIndex(value) {
+    GM_setValue(INLINE_INDEX_KEY, JSON.stringify(value));
   }
 
-  function loadBlockedInlineForHost(host) {
-    const arr = parseJson(GM_getValue(INLINE_SITE_KEY(host), '[]'), []);
+  function loadSet(key) {
+    const arr = parseJson(GM_getValue(key, '[]'), []);
     return Array.isArray(arr) ? new Set(arr) : new Set();
   }
 
-  function saveBlockedInlineForHost(host, set) {
+  function saveSet(key, set) {
+    GM_setValue(key, JSON.stringify([...set]));
+  }
+
+  function loadBlockedForHost(host) {
+    return loadSet(SITE_KEY(host));
+  }
+
+  function saveBlockedForHost(host, set) {
+    saveSet(SITE_KEY(host), set);
+    const index = loadIndex();
     const arr = [...set];
-    GM_setValue(INLINE_SITE_KEY(host), JSON.stringify(arr));
+    if (arr.length) index[host] = arr;
+    else delete index[host];
+    saveIndex(index);
+  }
+
+  function loadBlockedInlineForHost(host) {
+    return loadSet(INLINE_SITE_KEY(host));
+  }
+
+  function saveBlockedInlineForHost(host, set) {
+    saveSet(INLINE_SITE_KEY(host), set);
     const index = loadInlineIndex();
-    if (arr.length === 0) delete index[host];
-    else index[host] = arr;
+    const arr = [...set];
+    if (arr.length) index[host] = arr;
+    else delete index[host];
     saveInlineIndex(index);
   }
 
   function loadExcludedHosts() {
-    const arr = parseJson(GM_getValue(EXCLUDED_KEY, '[]'), []);
-    return Array.isArray(arr) ? new Set(arr) : new Set();
+    return loadSet(EXCLUDED_KEY);
   }
 
   function saveExcludedHosts(set) {
@@ -133,6 +139,14 @@
     }
   }
 
+  function hostFromHref(href) {
+    try {
+      return new URL(href).host || '(desconhecido)';
+    } catch {
+      return '(desconhecido)';
+    }
+  }
+
   function hash(str) {
     let h = 2166136261;
     for (let i = 0; i < str.length; i++) {
@@ -143,8 +157,7 @@
   }
 
   function inlineKeyFromCode(code) {
-    const text = String(code || '').trim();
-    return `inline:${hash(text)}`;
+    return `inline:${hash(String(code || '').trim())}`;
   }
 
   function describeScript(el) {
@@ -167,8 +180,7 @@
   function isBlockedScriptElement(el) {
     const src = el?.getAttribute?.('src');
     if (src) return blocked.has(srcKey(src));
-    const code = (el?.textContent || '').trim();
-    return blockedInline.has(inlineKeyFromCode(code));
+    return blockedInline.has(inlineKeyFromCode(el?.textContent || ''));
   }
 
   function neutralizeScript(el) {
@@ -180,8 +192,8 @@
   }
 
   function installInterceptors() {
-    const origAppendChild = Node.prototype.appendChild;
-    const origInsertBefore = Node.prototype.insertBefore;
+    const originalAppend = Node.prototype.appendChild;
+    const originalInsertBefore = Node.prototype.insertBefore;
 
     function intercept(node) {
       try {
@@ -193,16 +205,16 @@
       return null;
     }
 
-    Node.prototype.appendChild = function appendChildIntercept(node) {
-      const r = intercept(node);
-      if (r) return r;
-      return origAppendChild.call(this, node);
+    Node.prototype.appendChild = function patchedAppendChild(node) {
+      const result = intercept(node);
+      if (result) return result;
+      return originalAppend.call(this, node);
     };
 
-    Node.prototype.insertBefore = function insertBeforeIntercept(node, ref) {
-      const r = intercept(node);
-      if (r) return r;
-      return origInsertBefore.call(this, node, ref);
+    Node.prototype.insertBefore = function patchedInsertBefore(node, ref) {
+      const result = intercept(node);
+      if (result) return result;
+      return originalInsertBefore.call(this, node, ref);
     };
   }
 
@@ -220,15 +232,15 @@
       }
     };
 
-    const obs = new MutationObserver((mutations) => {
-      for (const m of mutations) {
-        for (const n of m.addedNodes) tryBlockNode(n);
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const added of mutation.addedNodes) tryBlockNode(added);
       }
     });
 
     const start = () => {
       const root = document.documentElement || document;
-      obs.observe(root, { childList: true, subtree: true });
+      observer.observe(root, { childList: true, subtree: true });
       try {
         document.querySelectorAll('script').forEach((s) => {
           if (isBlockedScriptElement(s)) neutralizeScript(s);
@@ -236,375 +248,289 @@
       } catch {}
     };
 
-    if (document.documentElement) {
-      start();
-    } else {
+    if (document.documentElement) start();
+    else {
       new MutationObserver(() => {
         if (document.documentElement) start();
       }).observe(document, { childList: true, subtree: true });
     }
   }
 
-  const navLock = (() => {
-    let active = false;
-    let pending = null;
-    let restoreFns = [];
-    let removedMeta = [];
-    let statusCb = null;
-
-    function setStatus(msg) {
-      if (typeof statusCb === 'function') statusCb(msg || '');
-    }
-
-    function parseMetaRefresh(content) {
-      const m = String(content || '').match(/^\s*(\d+)\s*;\s*url\s*=\s*(.+)\s*$/i);
-      if (!m) return null;
-      return {
-        seconds: Number(m[1] || 0),
-        url: (m[2] || '').replace(/^['"]|['"]$/g, ''),
-      };
-    }
-
-    function disableMetaRefresh() {
-      try {
-        const metas = Array.from(document.querySelectorAll('meta[http-equiv="refresh" i]'));
-        for (const meta of metas) {
-          const content = meta.getAttribute('content') || '';
-          const parsed = parseMetaRefresh(content);
-          if (!parsed || !parsed.url) continue;
-          removedMeta.push({ node: meta, content });
-          meta.parentNode && meta.parentNode.removeChild(meta);
-          pending = pending || { type: 'meta-refresh', url: new URL(parsed.url, location.href).href };
-          setStatus('Redirecionamento adiado até fechar o painel.');
-        }
-      } catch {}
-    }
-
-    function wrap(obj, prop, wrapper) {
-      const orig = obj[prop];
-      if (typeof orig !== 'function') return;
-      obj[prop] = wrapper(orig);
-      restoreFns.push(() => {
-        obj[prop] = orig;
-      });
-    }
-
-    function start(onStatus) {
-      if (active) return;
-      active = true;
-      pending = null;
-      removedMeta = [];
-      restoreFns = [];
-      statusCb = onStatus || null;
-
-      try {
-        wrap(window.location, 'assign', (orig) => function assignIntercept(url) {
-          if (!active) return orig.call(this, url);
-          pending = { type: 'location.assign', url: new URL(String(url), location.href).href };
-          setStatus('Navegação adiada até fechar o painel.');
-        });
-        wrap(window.location, 'replace', (orig) => function replaceIntercept(url) {
-          if (!active) return orig.call(this, url);
-          pending = { type: 'location.replace', url: new URL(String(url), location.href).href };
-          setStatus('Navegação adiada até fechar o painel.');
-        });
-      } catch {}
-
-      try {
-        wrap(history, 'pushState', (orig) => function pushStateIntercept(state, title, url) {
-          if (!active) return orig.apply(this, arguments);
-          if (url != null) {
-            pending = { type: 'history.pushState', url: new URL(String(url), location.href).href };
-            setStatus('Navegação adiada até fechar o painel.');
-            return;
-          }
-          return orig.apply(this, arguments);
-        });
-        wrap(history, 'replaceState', (orig) => function replaceStateIntercept(state, title, url) {
-          if (!active) return orig.apply(this, arguments);
-          if (url != null) {
-            pending = { type: 'history.replaceState', url: new URL(String(url), location.href).href };
-            setStatus('Navegação adiada até fechar o painel.');
-            return;
-          }
-          return orig.apply(this, arguments);
-        });
-      } catch {}
-
-      disableMetaRefresh();
-    }
-
-    function stop() {
-      if (!active) return null;
-      active = false;
-
-      for (const r of restoreFns) {
-        try {
-          r();
-        } catch {}
-      }
-      restoreFns = [];
-
-      if (!pending) {
-        for (const it of removedMeta) {
-          try {
-            it.node.setAttribute('content', it.content);
-            document.head && document.head.appendChild(it.node);
-          } catch {}
-        }
-      }
-      removedMeta = [];
-
-      const p = pending;
-      pending = null;
-      setStatus('');
-      statusCb = null;
-      return p;
-    }
-
-    return { start, stop };
-  })();
-
   function ensureStyles() {
+    if (window.__VINI_SM_STYLES__) return;
+    window.__VINI_SM_STYLES__ = true;
+
     GM_addStyle(`
-      #sm-overlay {
-        --sm-bg:#f3f5f8;
-        --sm-card:#ffffff;
-        --sm-card-2:#f8fafc;
-        --sm-text:#0b1220;
-        --sm-muted:#5b6b81;
-        --sm-border:#dde4ee;
-        --sm-shadow:0 24px 80px rgba(11, 18, 32, 0.24);
-        --sm-focus:0 0 0 4px rgba(14, 116, 255, 0.18);
-        --sm-accent:#0e74ff;
-        --sm-accent-soft:#e9f2ff;
-        --sm-danger:#b42318;
-        --sm-danger-soft:#fef0f0;
-        --sm-warn:#9a6700;
-        --sm-warn-soft:#fff8eb;
-        --sm-radius:16px;
-        --sm-radius-sm:10px;
-        --sm-font:13px/1.46 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      }
-      #sm-overlay {
+      #smx-overlay {
+        --smx-bg:#f4f7fb;
+        --smx-card:#ffffff;
+        --smx-card-2:#f8fbff;
+        --smx-text:#0f172a;
+        --smx-muted:#64748b;
+        --smx-line:#dbe5f1;
+        --smx-accent:#2563eb;
+        --smx-accent-soft:#eef4ff;
+        --smx-success:#0f766e;
+        --smx-success-soft:#ecfdf5;
+        --smx-danger:#b42318;
+        --smx-danger-soft:#fff1f2;
+        --smx-warn:#9a6700;
+        --smx-warn-soft:#fff7e6;
+        --smx-shadow:0 28px 90px rgba(2, 6, 23, .28);
+        --smx-radius:16px;
+        --smx-radius-sm:10px;
+        --smx-font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
         position: fixed;
         inset: 0;
         z-index: 2147483647;
-        background: rgba(11, 18, 32, 0.45);
-        backdrop-filter: blur(3px);
-        color: var(--sm-text);
-        font: var(--sm-font);
+        background: rgba(15, 23, 42, .48);
+        backdrop-filter: blur(4px);
+        color: var(--smx-text);
+        font: var(--smx-font);
+        overscroll-behavior: contain;
       }
-      #sm-overlay, #sm-overlay * {
-        box-sizing: border-box;
-      }
-      #sm-panel {
+      #smx-overlay, #smx-overlay * { box-sizing: border-box; }
+      #smx-panel {
         position: fixed;
-        left: 50%;
-        top: 5vh;
-        transform: translateX(-50%);
-        width: min(1020px, 96vw);
-        max-height: 90vh;
-        overflow: auto;
-        background: var(--sm-card);
-        color: var(--sm-text) !important;
-        border: 1px solid var(--sm-border);
-        border-radius: var(--sm-radius);
-        box-shadow: var(--sm-shadow);
-        font: var(--sm-font);
+        inset: 4vh 3vw;
+        background: var(--smx-card);
+        border: 1px solid var(--smx-line);
+        border-radius: calc(var(--smx-radius) + 4px);
+        box-shadow: var(--smx-shadow);
+        display: grid;
+        grid-template-rows: auto 1fr;
+        overflow: hidden;
+        overscroll-behavior: contain;
       }
-      .sm-header {
-        position: sticky;
-        top: 0;
-        z-index: 3;
-        background: linear-gradient(180deg, #ffffff 0%, #ffffff 72%, rgba(255, 255, 255, 0.96) 100%);
-        border-bottom: 1px solid var(--sm-border);
+      .smx-head {
         padding: 14px;
+        border-bottom: 1px solid var(--smx-line);
+        background: linear-gradient(180deg, #fff, #fbfdff);
       }
-      .sm-topline {
+      .smx-head-top {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 10px;
+        gap: 12px;
       }
-      .sm-title {
-        margin: 0;
-        font-size: 15px;
-        font-weight: 750;
-        letter-spacing: 0.2px;
-        color: var(--sm-text) !important;
+      .smx-title { margin: 0; font-size: 16px; font-weight: 800; color: var(--smx-text) !important; }
+      .smx-sub { margin-top: 4px; color: var(--smx-muted) !important; font-size: 12px; }
+      .smx-close {
+        border: 1px solid var(--smx-line);
+        background: #fff !important;
+        color: var(--smx-text) !important;
+        border-radius: 12px;
+        padding: 8px 12px;
+        cursor: pointer;
+        font: inherit;
       }
-      .sm-sub {
-        margin-top: 5px;
-        color: var(--sm-muted) !important;
+      .smx-layout {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        background: var(--smx-bg);
+      }
+      .smx-nav {
+        border-right: 1px solid var(--smx-line);
+        background: #f8fbff;
+        padding: 12px;
+        display: grid;
+        align-content: start;
+        gap: 8px;
+        overflow: auto;
+        overscroll-behavior: contain;
+      }
+      .smx-nav-title {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .08em;
+        color: var(--smx-muted) !important;
+        text-transform: uppercase;
+        padding: 2px 4px;
+      }
+      .smx-nav-btn {
+        width: 100%;
+        text-align: left;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        background: transparent !important;
+        color: var(--smx-text) !important;
+        padding: 10px;
+        cursor: pointer;
+        font: inherit;
+      }
+      .smx-nav-btn:hover { background: #fff !important; border-color: var(--smx-line); }
+      .smx-nav-btn[data-active="1"] {
+        background: var(--smx-accent-soft) !important;
+        border-color: rgba(37,99,235,.2);
+      }
+      .smx-nav-label { display:block; font-weight:700; font-size:12.5px; }
+      .smx-nav-desc { display:block; color: var(--smx-muted) !important; font-size:11.5px; margin-top:2px; }
+      .smx-main {
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+        padding: 14px;
+        display: grid;
+        align-content: start;
+        gap: 12px;
+      }
+      .smx-grid { display: grid; gap: 12px; grid-template-columns: repeat(12, minmax(0,1fr)); }
+      .smx-card {
+        background: var(--smx-card);
+        border: 1px solid var(--smx-line);
+        border-radius: var(--smx-radius);
+        overflow: visible;
+      }
+      .smx-card-head {
+        padding: 12px 12px 10px;
+        border-bottom: 1px solid var(--smx-line);
+        background: var(--smx-card-2);
+      }
+      .smx-card-title { margin: 0; font-size: 13px; font-weight: 800; color: var(--smx-text) !important; }
+      .smx-card-desc { margin-top: 4px; color: var(--smx-muted) !important; font-size: 12px; }
+      .smx-card-body { padding: 12px; display: grid; gap: 10px; }
+      .smx-full { grid-column: span 12; }
+      .smx-half { grid-column: span 6; }
+      .smx-third { grid-column: span 4; }
+      .smx-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+      .smx-pill {
+        border: 1px solid var(--smx-line);
+        border-radius: 999px;
+        background: #fff !important;
+        color: var(--smx-muted) !important;
+        padding: 4px 9px;
+        font-size: 11.5px;
+      }
+      .smx-note {
+        border: 1px solid rgba(154,103,0,.2);
+        background: var(--smx-warn-soft);
+        color: var(--smx-warn) !important;
+        border-radius: 12px;
+        padding: 9px 10px;
         font-size: 12px;
       }
-      .sm-controls {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 10px;
+      .smx-ok {
+        border: 1px solid rgba(15,118,110,.2);
+        background: var(--smx-success-soft);
+        color: var(--smx-success) !important;
+        border-radius: 12px;
+        padding: 9px 10px;
+        font-size: 12px;
       }
-      .sm-input {
-        flex: 1;
-        min-width: 230px;
-        box-sizing: border-box;
-        border: 1px solid var(--sm-border);
-        border-radius: var(--sm-radius-sm);
+      .smx-input, .smx-select {
+        width: 100%;
+        border: 1px solid var(--smx-line);
+        border-radius: 10px;
+        background: #fff !important;
+        color: var(--smx-text) !important;
         padding: 9px 10px;
         font: inherit;
-        color: var(--sm-text) !important;
-        background: #fff !important;
         outline: none;
       }
-      .sm-input:focus {
-        border-color: #74b2ff;
-        box-shadow: var(--sm-focus);
+      .smx-input:focus, .smx-select:focus {
+        border-color: #93c5fd;
+        box-shadow: 0 0 0 4px rgba(37,99,235,.15);
       }
-      .sm-btn {
-        border: 1px solid var(--sm-border);
-        border-radius: var(--sm-radius-sm);
+      .smx-row { display:flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .smx-btn {
+        border: 1px solid var(--smx-line);
+        border-radius: 10px;
         background: #fff !important;
-        color: var(--sm-text) !important;
+        color: var(--smx-text) !important;
         padding: 8px 10px;
+        cursor: pointer;
         font: inherit;
-        cursor: pointer;
         white-space: nowrap;
-        transition: border-color .15s ease, background-color .15s ease, color .15s ease;
       }
-      .sm-btn:hover { border-color: #bcc7d9; background: #f8fbff; }
-      .sm-btn-primary {
-        border-color: rgba(14, 116, 255, 0.28);
-        background: var(--sm-accent-soft) !important;
-        color: var(--sm-accent) !important;
+      .smx-btn:hover { border-color: #c7d4e3; background: #fbfdff !important; }
+      .smx-btn-primary {
+        background: var(--smx-accent-soft) !important;
+        border-color: rgba(37,99,235,.22);
+        color: var(--smx-accent) !important;
       }
-      .sm-btn-danger {
-        border-color: rgba(180, 35, 24, 0.26);
-        background: var(--sm-danger-soft) !important;
-        color: var(--sm-danger) !important;
+      .smx-btn-danger {
+        background: var(--smx-danger-soft) !important;
+        border-color: rgba(180,35,24,.22);
+        color: var(--smx-danger) !important;
       }
-      .sm-body {
-        padding: 14px;
-        display: grid;
-        gap: 10px;
-        background: var(--sm-bg);
+      details.smx-item {
+        border: 1px solid var(--smx-line);
+        border-radius: 12px;
+        background: #fff;
+        overflow: visible;
       }
-      .sm-pillbar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 7px;
-        color: var(--sm-muted) !important;
-        font-size: 12px;
-      }
-      .sm-pill {
-        border: 1px solid var(--sm-border);
-        border-radius: 999px;
-        padding: 4px 9px;
-        background: var(--sm-card) !important;
-        color: var(--sm-muted) !important;
-      }
-      .sm-note {
-        border: 1px solid rgba(154, 103, 0, 0.26);
-        background: var(--sm-warn-soft);
-        color: var(--sm-warn) !important;
-        border-radius: var(--sm-radius-sm);
-        padding: 8px 9px;
-        font-size: 12px;
-      }
-      .sm-status {
-        border: 1px solid rgba(14, 116, 255, 0.25);
-        background: var(--sm-accent-soft);
-        color: var(--sm-accent) !important;
-        border-radius: var(--sm-radius-sm);
-        padding: 8px 9px;
-        font-size: 12px;
-        display: none;
-        margin-top: 8px;
-      }
-      .sm-section {
-        border: 1px solid var(--sm-border);
-        border-radius: var(--sm-radius);
-        overflow: hidden;
-        background: var(--sm-card);
-      }
-      .sm-section-title {
-        margin: 0;
-        padding: 11px 12px;
-        font-size: 12.5px;
-        font-weight: 750;
-        border-bottom: 1px solid var(--sm-border);
-        background: var(--sm-card-2);
-        color: var(--sm-text) !important;
-        text-transform: none !important;
-        letter-spacing: 0 !important;
-      }
-      details.sm-accordion {
-        border-top: 1px solid var(--sm-border);
-      }
-      details.sm-accordion:first-of-type { border-top: 0; }
-      details.sm-accordion > summary {
-        cursor: pointer;
+      details.smx-item > summary {
         list-style: none;
+        cursor: pointer;
+        padding: 10px 12px;
         display: flex;
         justify-content: space-between;
-        align-items: center;
         gap: 10px;
-        padding: 10px 12px;
-        font-weight: 600;
+        align-items: center;
       }
-      details.sm-accordion > summary::-webkit-details-marker { display: none; }
-      details.sm-accordion[open] > summary {
-        background: var(--sm-card-2);
-        border-bottom: 1px solid var(--sm-border);
+      details.smx-item > summary::-webkit-details-marker { display:none; }
+      details.smx-item[open] > summary {
+        background: #f9fbff;
+        border-bottom: 1px solid var(--smx-line);
       }
-      .sm-summary-left {
-        display: grid;
-        gap: 2px;
-        min-width: 0;
-      }
-      .sm-summary-title {
-        font-size: 12.5px;
+      .smx-sum-main { min-width: 0; display:grid; gap:2px; }
+      .smx-sum-title {
         font-weight: 700;
-        color: var(--sm-text) !important;
+        font-size: 12.5px;
+        color: var(--smx-text) !important;
+        white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: nowrap;
       }
-      .sm-summary-sub {
-        font-size: 11.5px;
-        color: var(--sm-muted) !important;
-      }
-      .sm-badge {
-        border: 1px solid var(--sm-border);
+      .smx-sum-sub { font-size: 11.5px; color: var(--smx-muted) !important; }
+      .smx-sum-badge {
+        border: 1px solid var(--smx-line);
         border-radius: 999px;
         padding: 3px 8px;
         font-size: 11px;
-        color: var(--sm-muted) !important;
+        color: var(--smx-muted) !important;
         background: #fff !important;
       }
-      .sm-row {
+      .smx-list-row {
         padding: 10px 12px;
-        border-bottom: 1px solid var(--sm-border);
+        border-bottom: 1px solid var(--smx-line);
         display: grid;
-        gap: 5px;
+        gap: 6px;
       }
-      .sm-row:last-child { border-bottom: 0; }
-      .sm-mono {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      .smx-list-row:last-child { border-bottom: 0; }
+      .smx-mono {
+        font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
         font-size: 12px;
         word-break: break-all;
+        color: var(--smx-text) !important;
       }
-      .sm-meta { color: var(--sm-muted) !important; font-size: 12px; }
-      .sm-row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-      .sm-empty {
-        padding: 18px 12px;
-        color: var(--sm-muted) !important;
+      .smx-meta { color: var(--smx-muted) !important; font-size: 11.5px; }
+      .smx-empty {
+        border: 1px dashed var(--smx-line);
+        border-radius: 12px;
+        background: #fff;
+        color: var(--smx-muted) !important;
+        padding: 14px;
         font-size: 12px;
       }
-      @media (max-width: 700px) {
-        #sm-panel { top: 2vh; max-height: 95vh; width: min(1020px, 98vw); }
-        .sm-header { padding: 12px; }
-        .sm-body { padding: 12px; }
+      .smx-kv { display: grid; gap: 8px; }
+      .smx-kv-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 10px;
+        border: 1px solid var(--smx-line);
+        border-radius: 10px;
+        background: #fff;
+      }
+      .smx-kv-key { color: var(--smx-muted) !important; font-size: 12px; }
+      .smx-kv-val { color: var(--smx-text) !important; font-weight: 700; font-size: 12px; text-align: right; }
+      @media (max-width: 980px) {
+        .smx-layout { grid-template-columns: 1fr; }
+        .smx-nav { border-right: 0; border-bottom: 1px solid var(--smx-line); }
+        .smx-half, .smx-third { grid-column: span 12; }
       }
     `);
   }
@@ -614,87 +540,100 @@
     else document.addEventListener('DOMContentLoaded', fn, { once: true });
   }
 
-  function openOverlay(titleText, opts) {
-    const options = { lockNavigation: true, ...opts };
-    if (document.getElementById('sm-overlay')) return null;
+  function el(tag, opts = {}, children = []) {
+    const node = document.createElement(tag);
+    if (opts.className) node.className = opts.className;
+    if (opts.text != null) node.textContent = opts.text;
+    if (opts.html != null) node.innerHTML = opts.html;
+    if (opts.type) node.type = opts.type;
+    if (opts.placeholder) node.placeholder = opts.placeholder;
+    if (opts.value != null) node.value = opts.value;
+    if (opts.attrs) {
+      Object.entries(opts.attrs).forEach(([k, v]) => {
+        if (v == null || v === false) return;
+        node.setAttribute(k, v === true ? '' : String(v));
+      });
+    }
+    if (opts.on) {
+      Object.entries(opts.on).forEach(([k, fn]) => node.addEventListener(k, fn));
+    }
+    children.forEach((child) => {
+      if (child == null) return;
+      node.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+    });
+    return node;
+  }
+
+  function summaryNode(title, subtitle, badge) {
+    return el('summary', {}, [
+      el('div', { className: 'smx-sum-main' }, [
+        el('div', { className: 'smx-sum-title', text: title }),
+        el('div', { className: 'smx-sum-sub', text: subtitle }),
+      ]),
+      el('span', { className: 'smx-sum-badge', text: badge }),
+    ]);
+  }
+
+  function openShell() {
+    if (document.getElementById('smx-overlay')) return null;
     ensureStyles();
 
-    const overlay = document.createElement('div');
-    overlay.id = 'sm-overlay';
+    const overlay = el('div', { attrs: { id: 'smx-overlay' } });
+    const panel = el('div', { attrs: { id: 'smx-panel' } });
+    const head = el('div', { className: 'smx-head' });
+    const headTop = el('div', { className: 'smx-head-top' });
+    const titleWrap = el('div');
+    const title = el('h2', { className: 'smx-title', text: 'Script Manager' });
+    const subtitle = el('div', { className: 'smx-sub', text: `Host atual: ${HOST}` });
+    const closeBtn = el('button', { className: 'smx-close', type: 'button', text: 'Fechar' });
+    const layout = el('div', { className: 'smx-layout' });
+    const nav = el('div', { className: 'smx-nav' });
+    const main = el('div', { className: 'smx-main' });
+    const prevHtmlOverflow = document.documentElement ? document.documentElement.style.overflow : '';
+    const prevBodyOverflow = document.body ? document.body.style.overflow : '';
 
-    const panel = document.createElement('div');
-    panel.id = 'sm-panel';
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(subtitle);
+    headTop.appendChild(titleWrap);
+    headTop.appendChild(closeBtn);
+    head.appendChild(headTop);
 
-    const header = document.createElement('div');
-    header.className = 'sm-header';
+    layout.appendChild(nav);
+    layout.appendChild(main);
+    panel.appendChild(head);
+    panel.appendChild(layout);
+    overlay.appendChild(panel);
 
-    const topline = document.createElement('div');
-    topline.className = 'sm-topline';
-
-    const title = document.createElement('h2');
-    title.className = 'sm-title';
-    title.textContent = titleText;
-
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'sm-btn';
-    closeBtn.type = 'button';
-    closeBtn.textContent = 'Fechar';
-
-    const status = document.createElement('div');
-    status.className = 'sm-status';
-
-    function setStatus(msg) {
-      const text = String(msg || '').trim();
-      status.textContent = text;
-      status.style.display = text ? 'block' : 'none';
-    }
-
-    function closeOverlay() {
+    function close() {
       try {
         overlay.remove();
       } catch {}
-      if (options.lockNavigation) {
-        const pending = navLock.stop();
-        if (pending && pending.url) {
-          try {
-            window.location.href = pending.url;
-          } catch {}
-        }
-      }
+      try {
+        if (document.documentElement) document.documentElement.style.overflow = prevHtmlOverflow;
+        if (document.body) document.body.style.overflow = prevBodyOverflow;
+      } catch {}
       window.removeEventListener('keydown', onEsc, true);
     }
 
     const onEsc = (e) => {
-      if (e.key === 'Escape') closeOverlay();
+      if (e.key === 'Escape') close();
     };
 
-    closeBtn.addEventListener('click', closeOverlay);
+    closeBtn.addEventListener('click', close);
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) closeOverlay();
+      if (e.target === overlay) close();
     });
-
-    topline.appendChild(title);
-    topline.appendChild(closeBtn);
-    header.appendChild(topline);
-    header.appendChild(status);
-
-    panel.appendChild(header);
-    overlay.appendChild(panel);
+    window.addEventListener('keydown', onEsc, true);
 
     whenDomReady(() => {
+      try {
+        if (document.documentElement) document.documentElement.style.overflow = 'hidden';
+        if (document.body) document.body.style.overflow = 'hidden';
+      } catch {}
       (document.body || document.documentElement).appendChild(overlay);
     });
 
-    window.addEventListener('keydown', onEsc, true);
-
-    if (options.lockNavigation) navLock.start(setStatus);
-
-    return { panel, header, body: (() => {
-      const body = document.createElement('div');
-      body.className = 'sm-body';
-      panel.appendChild(body);
-      return body;
-    })() };
+    return { overlay, panel, head, nav, main, close };
   }
 
   function collectScriptsFromDoc(doc) {
@@ -708,11 +647,13 @@
   function collectScriptsIncludingFrames(includeFrames) {
     const described = [];
     const notes = [];
-
-    described.push(...collectScriptsFromDoc(document));
-    if (!includeFrames) return { described, notes };
+    if (!includeFrames) {
+      described.push(...collectScriptsFromDoc(document));
+      return { described, notes };
+    }
 
     const visited = new Set();
+
     function walk(win, path) {
       if (!win || visited.has(win)) return;
       visited.add(win);
@@ -724,6 +665,7 @@
         notes.push(`Frame cross-origin inacessivel: ${path}`);
         return;
       }
+
       described.push(...collectScriptsFromDoc(doc));
 
       let frames;
@@ -732,6 +674,7 @@
       } catch {
         return;
       }
+
       for (let i = 0; i < frames.length; i++) walk(frames[i], `${path}/${i}`);
     }
 
@@ -739,630 +682,618 @@
     return { described, notes };
   }
 
-  function hostFromHref(href) {
-    try {
-      return new URL(href).host || '(desconhecido)';
-    } catch {
-      return '(desconhecido)';
-    }
-  }
-
-  function matchesQuery(script, q) {
+  function matchesQuery(item, q) {
     if (!q) return true;
-    const haystack = [script.kind, script.href || '', script.key || '', script.id || '', script.preview || '']
+    const text = [item.kind, item.href || '', item.key || '', item.id || '', item.preview || '']
       .join(' ')
       .toLowerCase();
-    return haystack.includes(q);
+    return text.includes(q);
   }
 
-  function createAccordionSummary(title, subtitle, badgeText) {
-    const summary = document.createElement('summary');
+  function buildPanelApp() {
+    const shell = openShell();
+    if (!shell) return;
 
-    const left = document.createElement('div');
-    left.className = 'sm-summary-left';
+    const state = {
+      view: 'overview',
+      siteSearch: '',
+      siteIncludeFrames: false,
+      globalSearch: '',
+      excludedSearch: '',
+    };
 
-    const titleEl = document.createElement('div');
-    titleEl.className = 'sm-summary-title';
-    titleEl.textContent = title;
+    const navTitle = el('div', { className: 'smx-nav-title', text: 'Painel' });
+    shell.nav.appendChild(navTitle);
 
-    const subEl = document.createElement('div');
-    subEl.className = 'sm-summary-sub';
-    subEl.textContent = subtitle;
+    const views = [
+      {
+        id: 'overview',
+        label: 'Resumo',
+        desc: 'Visão geral e ações rápidas do host atual',
+        render: renderOverviewView,
+      },
+      {
+        id: 'site',
+        label: 'Este site',
+        desc: 'Listar e bloquear scripts detectados nesta página',
+        render: renderSiteView,
+      },
+      {
+        id: 'global',
+        label: 'Bloqueios globais',
+        desc: 'Gerenciar todos os bloqueios salvos por host',
+        render: renderGlobalView,
+      },
+      {
+        id: 'excluded',
+        label: 'Sites excluídos',
+        desc: 'Hosts ignorados completamente pelo script',
+        render: renderExcludedView,
+      },
+    ];
 
-    const badge = document.createElement('span');
-    badge.className = 'sm-badge';
-    badge.textContent = badgeText;
+    const navButtons = new Map();
 
-    left.appendChild(titleEl);
-    left.appendChild(subEl);
-    summary.appendChild(left);
-    summary.appendChild(badge);
-    return summary;
-  }
+    function setView(viewId) {
+      state.view = viewId;
+      render();
+    }
 
-  function openSitePanel() {
-    const ui = openOverlay(`Script Manager - ${HOST}`, { lockNavigation: true });
-    if (!ui) return;
+    views.forEach((v) => {
+      const btn = el('button', {
+        className: 'smx-nav-btn',
+        type: 'button',
+        on: { click: () => setView(v.id) },
+      }, [
+        el('span', { className: 'smx-nav-label', text: v.label }),
+        el('span', { className: 'smx-nav-desc', text: v.desc }),
+      ]);
+      navButtons.set(v.id, btn);
+      shell.nav.appendChild(btn);
+    });
 
-    const sub = document.createElement('div');
-    sub.className = 'sm-sub';
-    sub.textContent = 'Lista por site de origem. Clique no site para expandir os scripts.';
-    ui.header.appendChild(sub);
+    function card(title, desc, bodyChildren) {
+      const c = el('section', { className: 'smx-card smx-full' });
+      const head = el('div', { className: 'smx-card-head' }, [
+        el('h3', { className: 'smx-card-title', text: title }),
+        desc ? el('div', { className: 'smx-card-desc', text: desc }) : null,
+      ]);
+      const body = el('div', { className: 'smx-card-body' });
+      bodyChildren.forEach((child) => body.appendChild(child));
+      c.appendChild(head);
+      c.appendChild(body);
+      return c;
+    }
 
-    const controls = document.createElement('div');
-    controls.className = 'sm-controls';
+    function smallStatCard(title, value, hint) {
+      const c = el('section', { className: 'smx-card smx-third' });
+      const body = el('div', { className: 'smx-card-body' }, [
+        el('div', { className: 'smx-meta', text: title }),
+        el('div', { className: 'smx-title', text: String(value) }),
+        hint ? el('div', { className: 'smx-meta', text: hint }) : null,
+      ]);
+      c.appendChild(body);
+      return c;
+    }
 
-    const search = document.createElement('input');
-    search.className = 'sm-input';
-    search.placeholder = 'Filtrar por URL, dominio ou trecho';
+    function refreshHostState() {
+      blocked = loadBlockedForHost(HOST);
+      blockedInline = loadBlockedInlineForHost(HOST);
+      excludedHosts = loadExcludedHosts();
+    }
 
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'sm-btn';
-    refreshBtn.type = 'button';
-    refreshBtn.textContent = 'Recarregar';
+    function renderOverviewView(container) {
+      refreshHostState();
 
-    const framesBtn = document.createElement('button');
-    framesBtn.className = 'sm-btn';
-    framesBtn.type = 'button';
-    framesBtn.textContent = 'Frames: nao';
+      const hostExcluded = isHostExcluded(HOST);
+      const index = loadIndex();
+      const inlineIndex = loadInlineIndex();
+      const globalHosts = new Set([...Object.keys(index), ...Object.keys(inlineIndex)]).size;
+      const totalGlobalExternal = Object.values(index).reduce((acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0), 0);
+      const totalGlobalInline = Object.values(inlineIndex).reduce((acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0), 0);
 
-    controls.appendChild(search);
-    controls.appendChild(refreshBtn);
-    controls.appendChild(framesBtn);
-    ui.header.appendChild(controls);
+      const grid = el('div', { className: 'smx-grid' });
+      grid.appendChild(smallStatCard('Host atual', HOST, hostExcluded ? 'Excluído do script' : 'Ativo'));
+      grid.appendChild(smallStatCard('Bloqueios neste host', blocked.size, 'Scripts externos'));
+      grid.appendChild(smallStatCard('Bloqueios inline neste host', blockedInline.size, 'Hash de conteúdo'));
+      container.appendChild(grid);
 
-    const warning = document.createElement('div');
-    warning.className = 'sm-note';
-    warning.textContent = 'Bloqueio externo usa origin + pathname. Inline usa hash do conteudo. Inline do HTML inicial pode executar antes do bloqueio.';
-    ui.body.appendChild(warning);
+      const statusMessage = hostExcluded
+        ? el('div', { className: 'smx-note', text: 'Este host está excluído. O script não aplica bloqueios nem interceptações aqui.' })
+        : el('div', { className: 'smx-ok', text: 'Este host está ativo. O bloqueio de scripts externos e inline está habilitado.' });
 
-    const content = document.createElement('div');
-    ui.body.appendChild(content);
+      container.appendChild(card(
+        'Estado do host atual',
+        'Use estas ações para ativar/desativar o script somente neste host.',
+        [
+          statusMessage,
+          el('div', { className: 'smx-row' }, [
+            el('button', {
+              className: hostExcluded ? 'smx-btn smx-btn-primary' : 'smx-btn smx-btn-danger',
+              type: 'button',
+              text: hostExcluded ? 'Reativar script neste host' : 'Excluir host dos efeitos do script',
+              on: {
+                click: () => {
+                  setHostExcluded(HOST, !hostExcluded);
+                  refreshHostState();
+                  registerMenuCommand();
+                  render();
+                },
+              },
+            }),
+            el('button', {
+              className: 'smx-btn',
+              type: 'button',
+              text: 'Abrir visão deste site',
+              on: { click: () => setView('site') },
+            }),
+            el('button', {
+              className: 'smx-btn',
+              type: 'button',
+              text: 'Abrir bloqueios globais',
+              on: { click: () => setView('global') },
+            }),
+          ]),
+        ]
+      ));
 
-    let includeFrames = false;
+      container.appendChild(card(
+        'Resumo global',
+        'Contagem total de bloqueios persistidos e hosts excluídos.',
+        [
+          el('div', { className: 'smx-pills' }, [
+            el('span', { className: 'smx-pill', text: `Hosts com bloqueios: ${globalHosts}` }),
+            el('span', { className: 'smx-pill', text: `Bloqueios externos: ${totalGlobalExternal}` }),
+            el('span', { className: 'smx-pill', text: `Bloqueios inline: ${totalGlobalInline}` }),
+            el('span', { className: 'smx-pill', text: `Hosts excluídos: ${excludedHosts.size}` }),
+          ]),
+          el('div', { className: 'smx-meta', text: 'Use “Este site” para diagnosticar a página atual, “Bloqueios globais” para limpar regras salvas e “Sites excluídos” para gerenciar hosts ignorados.' }),
+        ]
+      ));
+    }
 
-    function renderList() {
-      const q = (search.value || '').trim().toLowerCase();
-      content.textContent = '';
+    function renderSiteView(container) {
+      refreshHostState();
 
-      const { described, notes } = collectScriptsIncludingFrames(includeFrames);
-      const externalsAll = described.filter((s) => s.kind === 'external');
-      const inlineAll = described.filter((s) => s.kind === 'inline');
+      const hostExcluded = isHostExcluded(HOST);
+      const controls = el('div', { className: 'smx-row' });
+      const search = el('input', {
+        className: 'smx-input',
+        placeholder: 'Filtrar por URL, domínio, hash ou trecho',
+        value: state.siteSearch,
+        on: {
+          input: (e) => {
+            state.siteSearch = e.target.value;
+            render();
+          },
+        },
+      });
+      const framesBtn = el('button', {
+        className: `smx-btn ${state.siteIncludeFrames ? 'smx-btn-primary' : ''}`,
+        type: 'button',
+        text: `Frames: ${state.siteIncludeFrames ? 'sim' : 'não'}`,
+        on: {
+          click: () => {
+            state.siteIncludeFrames = !state.siteIncludeFrames;
+            render();
+          },
+        },
+      });
+      const refreshBtn = el('button', {
+        className: 'smx-btn',
+        type: 'button',
+        text: 'Atualizar leitura',
+        on: { click: () => render() },
+      });
+      controls.appendChild(search);
+      controls.appendChild(framesBtn);
+      controls.appendChild(refreshBtn);
+
+      const topInfo = hostExcluded
+        ? el('div', { className: 'smx-note', text: 'Este host está excluído. O painel continua visível, mas o bloqueio não é aplicado até você reativar o host.' })
+        : el('div', { className: 'smx-ok', text: 'Bloqueio ativo. Scripts dinâmicos detectados depois do carregamento podem ser neutralizados automaticamente.' });
+
+      const collected = collectScriptsIncludingFrames(state.siteIncludeFrames);
+      const q = state.siteSearch.trim().toLowerCase();
+      const externalsAll = collected.described.filter((s) => s.kind === 'external');
+      const inlineAll = collected.described.filter((s) => s.kind === 'inline');
       const externals = externalsAll.filter((s) => matchesQuery(s, q));
       const inlines = inlineAll.filter((s) => matchesQuery(s, q));
 
-      const stats = document.createElement('div');
-      stats.className = 'sm-pillbar';
-      stats.innerHTML = [
-        `<span class="sm-pill">Total: ${described.length}</span>`,
-        `<span class="sm-pill">Externos: ${externalsAll.length} (filtro: ${externals.length})</span>`,
-        `<span class="sm-pill">Inline: ${inlineAll.length} (filtro: ${inlines.length})</span>`,
-        `<span class="sm-pill">Bloqueados externos: ${blocked.size}</span>`,
-        `<span class="sm-pill">Bloqueados inline: ${blockedInline.size}</span>`,
-      ].join('');
-      content.appendChild(stats);
+      container.appendChild(card(
+        'Detector de scripts da página',
+        'Use o filtro para localizar scripts e bloquear/liberar rapidamente. Externos usam origin + pathname. Inline usam hash do conteúdo.',
+        [
+          controls,
+          topInfo,
+          el('div', { className: 'smx-pills' }, [
+            el('span', { className: 'smx-pill', text: `Total lidos: ${collected.described.length}` }),
+            el('span', { className: 'smx-pill', text: `Externos: ${externalsAll.length} (filtro: ${externals.length})` }),
+            el('span', { className: 'smx-pill', text: `Inline: ${inlineAll.length} (filtro: ${inlines.length})` }),
+            el('span', { className: 'smx-pill', text: `Bloqueados externos neste host: ${blocked.size}` }),
+            el('span', { className: 'smx-pill', text: `Bloqueados inline neste host: ${blockedInline.size}` }),
+          ]),
+          collected.notes.length ? el('div', { className: 'smx-note', text: collected.notes.join(' | ') }) : null,
+          el('div', { className: 'smx-note', text: 'Limite técnico: scripts inline do HTML inicial podem executar antes do userscript em alguns cenários do navegador.' }),
+        ].filter(Boolean)
+      ));
 
-      if (notes.length) {
-        const note = document.createElement('div');
-        note.className = 'sm-note';
-        note.textContent = notes.join(' | ');
-        content.appendChild(note);
-      }
-
-      const extSection = document.createElement('section');
-      extSection.className = 'sm-section';
-      const extTitle = document.createElement('h3');
-      extTitle.className = 'sm-section-title';
-      extTitle.textContent = `Sites externos (${externals.length} scripts)`;
-      extSection.appendChild(extTitle);
-
-      const bySite = new Map();
+      const extSectionBody = [];
+      const byDomain = new Map();
       externals.forEach((s) => {
-        const host = hostFromHref(s.href);
-        if (!bySite.has(host)) bySite.set(host, []);
-        bySite.get(host).push(s);
+        const domain = hostFromHref(s.href);
+        if (!byDomain.has(domain)) byDomain.set(domain, []);
+        byDomain.get(domain).push(s);
       });
+      const domains = [...byDomain.keys()].sort((a, b) => a.localeCompare(b));
 
-      const sortedSites = [...bySite.keys()].sort((a, b) => a.localeCompare(b));
-      if (sortedSites.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'sm-empty';
-        empty.textContent = 'Nenhum script externo corresponde ao filtro atual.';
-        extSection.appendChild(empty);
+      if (domains.length === 0) {
+        extSectionBody.push(el('div', { className: 'smx-empty', text: 'Nenhum script externo encontrado para o filtro atual.' }));
       } else {
-        for (const site of sortedSites) {
-          const items = bySite.get(site).slice().sort((a, b) => (a.href || '').localeCompare(b.href || ''));
+        domains.forEach((domain) => {
+          const items = byDomain.get(domain).slice().sort((a, b) => (a.href || '').localeCompare(b.href || ''));
           const blockedCount = items.filter((s) => blocked.has(s.key)).length;
-
-          const details = document.createElement('details');
-          details.className = 'sm-accordion';
-          details.open = Boolean(q) || blockedCount > 0;
-          details.appendChild(
-            createAccordionSummary(
-              site,
-              `${items.length} script(s) neste site`,
-              `${blockedCount} bloqueado(s)`
-            )
-          );
+          const details = el('details', { className: 'smx-item', attrs: { open: q || blockedCount > 0 } });
+          details.appendChild(summaryNode(domain, `${items.length} script(s) externos detectados`, `${blockedCount} bloqueado(s)`));
 
           items.forEach((s) => {
-            const row = document.createElement('div');
-            row.className = 'sm-row';
-
-            const src = document.createElement('div');
-            src.className = 'sm-mono';
-            src.textContent = s.href;
-
-            const meta = document.createElement('div');
-            meta.className = 'sm-meta';
-            meta.textContent = `Chave: ${s.key} | Estado: ${blocked.has(s.key) ? 'bloqueado' : 'liberado'}`;
-
-            const actions = document.createElement('div');
-            actions.className = 'sm-row-actions';
-
-            const toggle = document.createElement('button');
-            const isOn = blocked.has(s.key);
-            toggle.type = 'button';
-            toggle.className = `sm-btn ${isOn ? 'sm-btn-primary' : ''}`;
-            toggle.textContent = isOn ? 'Liberar script' : 'Bloquear script';
-            toggle.addEventListener('click', () => {
-              if (blocked.has(s.key)) blocked.delete(s.key);
-              else blocked.add(s.key);
-              saveBlockedForHost(HOST, blocked);
-              blocked = loadBlockedForHost(HOST);
-              renderList();
-            });
-
-            actions.appendChild(toggle);
-            row.appendChild(src);
-            row.appendChild(meta);
-            row.appendChild(actions);
+            const row = el('div', { className: 'smx-list-row' });
+            row.appendChild(el('div', { className: 'smx-mono', text: s.href }));
+            row.appendChild(el('div', { className: 'smx-meta', text: `Chave: ${s.key} | Estado: ${blocked.has(s.key) ? 'bloqueado' : 'liberado'}` }));
+            row.appendChild(el('div', { className: 'smx-row' }, [
+              el('button', {
+                className: `smx-btn ${blocked.has(s.key) ? 'smx-btn-primary' : ''}`,
+                type: 'button',
+                text: blocked.has(s.key) ? 'Liberar script' : 'Bloquear script',
+                on: {
+                  click: () => {
+                    if (blocked.has(s.key)) blocked.delete(s.key);
+                    else blocked.add(s.key);
+                    saveBlockedForHost(HOST, blocked);
+                    blocked = loadBlockedForHost(HOST);
+                    render();
+                  },
+                },
+              }),
+            ]));
             details.appendChild(row);
           });
 
-          extSection.appendChild(details);
-        }
+          extSectionBody.push(details);
+        });
       }
-      content.appendChild(extSection);
 
-      const inSection = document.createElement('section');
-      inSection.className = 'sm-section';
-      const inTitle = document.createElement('h3');
-      inTitle.className = 'sm-section-title';
-      inTitle.textContent = `Scripts inline (somente visualizacao): ${inlines.length}`;
-      inSection.appendChild(inTitle);
+      container.appendChild(card(
+        'Scripts externos por domínio',
+        'Clique no domínio para expandir e controlar scripts individuais.',
+        extSectionBody
+      ));
 
+      const inlineBody = [];
       if (inlines.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'sm-empty';
-        empty.textContent = 'Nenhum script inline corresponde ao filtro atual.';
-        inSection.appendChild(empty);
+        inlineBody.push(el('div', { className: 'smx-empty', text: 'Nenhum script inline encontrado para o filtro atual.' }));
       } else {
-        const details = document.createElement('details');
-        details.className = 'sm-accordion';
-        details.open = Boolean(q);
-
-        details.appendChild(
-          createAccordionSummary(
-            'Scripts inline',
-            'Conteudo nao bloqueavel por URL',
-            `${inlines.length} item(ns)`
-          )
-        );
+        const details = el('details', { className: 'smx-item' });
+        if (q) details.setAttribute('open', 'open');
+        details.appendChild(summaryNode('Scripts inline', 'Bloqueio por hash do conteúdo', `${inlines.length} item(ns)`));
 
         inlines.forEach((s) => {
-          const row = document.createElement('div');
-          row.className = 'sm-row';
-
-          const id = document.createElement('div');
-          id.className = 'sm-mono';
-          id.textContent = `[inline] ${s.id}`;
-
-          const meta = document.createElement('div');
-          meta.className = 'sm-meta';
-          meta.textContent = `Hash: ${s.key} | Tamanho: ${s.size} chars | Preview: ${(s.preview || '').slice(0, 130)}`;
-
-          const actions = document.createElement('div');
-          actions.className = 'sm-row-actions';
-
-          const toggle = document.createElement('button');
-          const isOn = blockedInline.has(s.key);
-          toggle.type = 'button';
-          toggle.className = `sm-btn ${isOn ? 'sm-btn-primary' : ''}`;
-          toggle.textContent = isOn ? 'Liberar inline' : 'Bloquear inline';
-          toggle.addEventListener('click', () => {
-            if (blockedInline.has(s.key)) blockedInline.delete(s.key);
-            else blockedInline.add(s.key);
-            saveBlockedInlineForHost(HOST, blockedInline);
-            blockedInline = loadBlockedInlineForHost(HOST);
-            renderList();
-          });
-
-          row.appendChild(id);
-          row.appendChild(meta);
-          actions.appendChild(toggle);
-          row.appendChild(actions);
+          const row = el('div', { className: 'smx-list-row' });
+          row.appendChild(el('div', { className: 'smx-mono', text: `[inline] ${s.id}` }));
+          row.appendChild(el('div', { className: 'smx-meta', text: `Hash: ${s.key} | Tamanho: ${s.size} chars | Prévia: ${(s.preview || '').slice(0, 120)}` }));
+          row.appendChild(el('div', { className: 'smx-row' }, [
+            el('button', {
+              className: `smx-btn ${blockedInline.has(s.key) ? 'smx-btn-primary' : ''}`,
+              type: 'button',
+              text: blockedInline.has(s.key) ? 'Liberar inline' : 'Bloquear inline',
+              on: {
+                click: () => {
+                  if (blockedInline.has(s.key)) blockedInline.delete(s.key);
+                  else blockedInline.add(s.key);
+                  saveBlockedInlineForHost(HOST, blockedInline);
+                  blockedInline = loadBlockedInlineForHost(HOST);
+                  render();
+                },
+              },
+            }),
+          ]));
           details.appendChild(row);
         });
 
-        inSection.appendChild(details);
+        inlineBody.push(details);
       }
-      content.appendChild(inSection);
+
+      container.appendChild(card(
+        'Scripts inline',
+        'Esta lista mostra scripts embutidos na página. O bloqueio usa hash do conteúdo, não URL.',
+        inlineBody
+      ));
     }
 
-    search.addEventListener('input', renderList);
-    refreshBtn.addEventListener('click', renderList);
-    framesBtn.addEventListener('click', () => {
-      includeFrames = !includeFrames;
-      framesBtn.textContent = `Frames: ${includeFrames ? 'sim' : 'nao'}`;
-      renderList();
-    });
+    function renderGlobalView(container) {
+      refreshHostState();
 
-    renderList();
-  }
+      const searchRow = el('div', { className: 'smx-row' });
+      const search = el('input', {
+        className: 'smx-input',
+        placeholder: 'Filtrar por host ou chave/hash',
+        value: state.globalSearch,
+        on: {
+          input: (e) => {
+            state.globalSearch = e.target.value;
+            render();
+          },
+        },
+      });
+      const clearAll = el('button', {
+        className: 'smx-btn smx-btn-danger',
+        type: 'button',
+        text: 'Zerar todos os bloqueios',
+        on: {
+          click: () => {
+            const extIndex = loadIndex();
+            const inlIndex = loadInlineIndex();
+            const hosts = [...new Set([...Object.keys(extIndex), ...Object.keys(inlIndex)])];
+            hosts.forEach((host) => {
+              saveBlockedForHost(host, new Set());
+              saveBlockedInlineForHost(host, new Set());
+            });
+            GM_setValue(INDEX_KEY, '{}');
+            GM_setValue(INLINE_INDEX_KEY, '{}');
+            refreshHostState();
+            render();
+          },
+        },
+      });
+      searchRow.appendChild(search);
+      searchRow.appendChild(clearAll);
 
-  function openGlobalBlockedPanel() {
-    const ui = openOverlay('Bloqueios globais', { lockNavigation: false });
-    if (!ui) return;
+      const extIndex = loadIndex();
+      const inlIndex = loadInlineIndex();
+      const allHosts = [...new Set([...Object.keys(extIndex), ...Object.keys(inlIndex)])].sort();
+      const q = state.globalSearch.trim().toLowerCase();
+      const hostItems = [];
 
-    const sub = document.createElement('div');
-    sub.className = 'sm-sub';
-    sub.textContent = 'Visualizacao compacta por host. Clique no host para ver as chaves bloqueadas.';
-    ui.header.appendChild(sub);
-
-    const controls = document.createElement('div');
-    controls.className = 'sm-controls';
-
-    const search = document.createElement('input');
-    search.className = 'sm-input';
-    search.placeholder = 'Filtrar por host ou chave';
-
-    const clearBtn = document.createElement('button');
-    clearBtn.type = 'button';
-    clearBtn.className = 'sm-btn sm-btn-danger';
-    clearBtn.textContent = 'Zerar bloqueios globais';
-
-    controls.appendChild(search);
-    controls.appendChild(clearBtn);
-    ui.header.appendChild(controls);
-
-    const content = document.createElement('div');
-    ui.body.appendChild(content);
-
-    function render() {
-      const q = (search.value || '').trim().toLowerCase();
-      content.textContent = '';
-
-      const index = loadIndex();
-      const inlineIndex = loadInlineIndex();
-      const hosts = [...new Set([...Object.keys(index), ...Object.keys(inlineIndex)])].sort();
-      let totalExternal = 0;
-      let totalInline = 0;
-      hosts.forEach((h) => {
-        totalExternal += Array.isArray(index[h]) ? index[h].length : 0;
-        totalInline += Array.isArray(inlineIndex[h]) ? inlineIndex[h].length : 0;
+      allHosts.forEach((host) => {
+        const ext = (Array.isArray(extIndex[host]) ? extIndex[host] : []).slice().sort();
+        const inl = (Array.isArray(inlIndex[host]) ? inlIndex[host] : []).slice().sort();
+        const visibleExt = ext.filter((k) => !q || host.toLowerCase().includes(q) || k.toLowerCase().includes(q));
+        const visibleInl = inl.filter((k) => !q || host.toLowerCase().includes(q) || k.toLowerCase().includes(q));
+        if (!visibleExt.length && !visibleInl.length) return;
+        hostItems.push({ host, visibleExt, visibleInl });
       });
 
-      const stats = document.createElement('div');
-      stats.className = 'sm-pillbar';
-      stats.innerHTML = `<span class="sm-pill">Hosts: ${hosts.length}</span><span class="sm-pill">Externos: ${totalExternal}</span><span class="sm-pill">Inline: ${totalInline}</span>`;
-      content.appendChild(stats);
+      const totalExt = Object.values(extIndex).reduce((acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0), 0);
+      const totalInl = Object.values(inlIndex).reduce((acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0), 0);
 
-      const section = document.createElement('section');
-      section.className = 'sm-section';
-      const title = document.createElement('h3');
-      title.className = 'sm-section-title';
-      title.textContent = 'Hosts com bloqueios';
-      section.appendChild(title);
+      container.appendChild(card(
+        'Bloqueios persistidos',
+        'Gerencie regras salvas para qualquer host. Você pode limpar tudo, limpar por host ou liberar itens individuais.',
+        [
+          searchRow,
+          el('div', { className: 'smx-pills' }, [
+            el('span', { className: 'smx-pill', text: `Hosts: ${allHosts.length}` }),
+            el('span', { className: 'smx-pill', text: `Externos: ${totalExt}` }),
+            el('span', { className: 'smx-pill', text: `Inline: ${totalInl}` }),
+          ]),
+        ]
+      ));
 
-      let anyVisible = false;
-      for (const host of hosts) {
-        const extKeys = (Array.isArray(index[host]) ? index[host] : []).slice().sort();
-        const inlKeys = (Array.isArray(inlineIndex[host]) ? inlineIndex[host] : []).slice().sort();
-        const visibleExt = extKeys.filter((k) => !q || host.toLowerCase().includes(q) || k.toLowerCase().includes(q));
-        const visibleInl = inlKeys.filter((k) => !q || host.toLowerCase().includes(q) || k.toLowerCase().includes(q));
-        if (visibleExt.length === 0 && visibleInl.length === 0) continue;
-        anyVisible = true;
+      if (!hostItems.length) {
+        container.appendChild(card(
+          'Lista de hosts',
+          'Hosts com bloqueios externos ou inline.',
+          [el('div', { className: 'smx-empty', text: allHosts.length ? 'Nenhum item corresponde ao filtro atual.' : 'Nenhum bloqueio global registrado.' })]
+        ));
+        return;
+      }
 
-        const details = document.createElement('details');
-        details.className = 'sm-accordion';
-        details.open = Boolean(q);
-        details.appendChild(
-          createAccordionSummary(
-            host,
-            'Bloqueios externos e inline para este host',
-            `ext ${visibleExt.length} | inl ${visibleInl.length}`
-          )
-        );
+      const body = [];
+      hostItems.forEach(({ host, visibleExt, visibleInl }) => {
+        const details = el('details', { className: 'smx-item' });
+        if (q) details.setAttribute('open', 'open');
+        details.appendChild(summaryNode(host, 'Bloqueios externos e inline salvos para este host', `ext ${visibleExt.length} | inl ${visibleInl.length}`));
 
-        const actionRow = document.createElement('div');
-        actionRow.className = 'sm-row';
-        const actions = document.createElement('div');
-        actions.className = 'sm-row-actions';
-
-        const clearHostBtn = document.createElement('button');
-        clearHostBtn.type = 'button';
-        clearHostBtn.className = 'sm-btn';
-        clearHostBtn.textContent = 'Liberar todos deste host';
-        clearHostBtn.addEventListener('click', () => {
-          saveBlockedForHost(host, new Set());
-          saveBlockedInlineForHost(host, new Set());
-          if (host === HOST) blocked = loadBlockedForHost(HOST);
-          if (host === HOST) blockedInline = loadBlockedInlineForHost(HOST);
-          render();
-        });
-
-        actions.appendChild(clearHostBtn);
-        actionRow.appendChild(actions);
+        const actionRow = el('div', { className: 'smx-list-row' });
+        actionRow.appendChild(el('div', { className: 'smx-meta', text: 'Ações do host' }));
+        actionRow.appendChild(el('div', { className: 'smx-row' }, [
+          el('button', {
+            className: 'smx-btn',
+            type: 'button',
+            text: 'Liberar todos deste host',
+            on: {
+              click: () => {
+                saveBlockedForHost(host, new Set());
+                saveBlockedInlineForHost(host, new Set());
+                if (host === HOST) refreshHostState();
+                render();
+              },
+            },
+          }),
+        ]));
         details.appendChild(actionRow);
 
         if (visibleExt.length) {
-          const extHead = document.createElement('div');
-          extHead.className = 'sm-row';
-          const label = document.createElement('div');
-          label.className = 'sm-meta';
-          label.textContent = 'Scripts externos';
-          extHead.appendChild(label);
-          details.appendChild(extHead);
-        }
-
-        visibleExt.forEach((k) => {
-          const row = document.createElement('div');
-          row.className = 'sm-row';
-
-          const meta = document.createElement('div');
-          meta.className = 'sm-meta';
-          meta.textContent = 'Chave externa bloqueada';
-
-          const key = document.createElement('div');
-          key.className = 'sm-mono';
-          key.textContent = k;
-
-          const rowActions = document.createElement('div');
-          rowActions.className = 'sm-row-actions';
-
-          const removeBtn = document.createElement('button');
-          removeBtn.type = 'button';
-          removeBtn.className = 'sm-btn';
-          removeBtn.textContent = 'Liberar';
-          removeBtn.addEventListener('click', () => {
-            const set = loadBlockedForHost(host);
-            set.delete(k);
-            saveBlockedForHost(host, set);
-            if (host === HOST) blocked = loadBlockedForHost(HOST);
-            render();
+          details.appendChild(el('div', { className: 'smx-list-row' }, [el('div', { className: 'smx-meta', text: 'Scripts externos' })]));
+          visibleExt.forEach((key) => {
+            const row = el('div', { className: 'smx-list-row' });
+            row.appendChild(el('div', { className: 'smx-meta', text: 'Chave externa bloqueada' }));
+            row.appendChild(el('div', { className: 'smx-mono', text: key }));
+            row.appendChild(el('div', { className: 'smx-row' }, [
+              el('button', {
+                className: 'smx-btn',
+                type: 'button',
+                text: 'Liberar',
+                on: {
+                  click: () => {
+                    const set = loadBlockedForHost(host);
+                    set.delete(key);
+                    saveBlockedForHost(host, set);
+                    if (host === HOST) refreshHostState();
+                    render();
+                  },
+                },
+              }),
+            ]));
+            details.appendChild(row);
           });
-
-          rowActions.appendChild(removeBtn);
-          row.appendChild(meta);
-          row.appendChild(key);
-          row.appendChild(rowActions);
-          details.appendChild(row);
-        });
+        }
 
         if (visibleInl.length) {
-          const inlHead = document.createElement('div');
-          inlHead.className = 'sm-row';
-          const label = document.createElement('div');
-          label.className = 'sm-meta';
-          label.textContent = 'Scripts inline';
-          inlHead.appendChild(label);
-          details.appendChild(inlHead);
+          details.appendChild(el('div', { className: 'smx-list-row' }, [el('div', { className: 'smx-meta', text: 'Scripts inline (hash)' })]));
+          visibleInl.forEach((key) => {
+            const row = el('div', { className: 'smx-list-row' });
+            row.appendChild(el('div', { className: 'smx-meta', text: 'Hash inline bloqueado' }));
+            row.appendChild(el('div', { className: 'smx-mono', text: key }));
+            row.appendChild(el('div', { className: 'smx-row' }, [
+              el('button', {
+                className: 'smx-btn',
+                type: 'button',
+                text: 'Liberar inline',
+                on: {
+                  click: () => {
+                    const set = loadBlockedInlineForHost(host);
+                    set.delete(key);
+                    saveBlockedInlineForHost(host, set);
+                    if (host === HOST) refreshHostState();
+                    render();
+                  },
+                },
+              }),
+            ]));
+            details.appendChild(row);
+          });
         }
 
-        visibleInl.forEach((k) => {
-          const row = document.createElement('div');
-          row.className = 'sm-row';
+        body.push(details);
+      });
 
-          const meta = document.createElement('div');
-          meta.className = 'sm-meta';
-          meta.textContent = 'Hash inline bloqueado';
-
-          const key = document.createElement('div');
-          key.className = 'sm-mono';
-          key.textContent = k;
-
-          const rowActions = document.createElement('div');
-          rowActions.className = 'sm-row-actions';
-
-          const removeBtn = document.createElement('button');
-          removeBtn.type = 'button';
-          removeBtn.className = 'sm-btn';
-          removeBtn.textContent = 'Liberar inline';
-          removeBtn.addEventListener('click', () => {
-            const set = loadBlockedInlineForHost(host);
-            set.delete(k);
-            saveBlockedInlineForHost(host, set);
-            if (host === HOST) blockedInline = loadBlockedInlineForHost(HOST);
-            render();
-          });
-
-          rowActions.appendChild(removeBtn);
-          row.appendChild(meta);
-          row.appendChild(key);
-          row.appendChild(rowActions);
-          details.appendChild(row);
-        });
-
-        section.appendChild(details);
-      }
-
-      if (!anyVisible) {
-        const row = document.createElement('div');
-        row.className = 'sm-empty';
-        row.textContent = hosts.length === 0
-          ? 'Nenhum bloqueio global registrado.'
-          : 'Nenhum item corresponde ao filtro atual.';
-        section.appendChild(row);
-      }
-
-      content.appendChild(section);
+      container.appendChild(card(
+        'Hosts com bloqueios',
+        'Clique no host para expandir os itens salvos.',
+        body
+      ));
     }
 
-    clearBtn.addEventListener('click', () => {
-      const index = loadIndex();
-      const inlineIndex = loadInlineIndex();
-      const hosts = [...new Set([...Object.keys(index), ...Object.keys(inlineIndex)])];
-      hosts.forEach((h) => {
-        saveBlockedForHost(h, new Set());
-        saveBlockedInlineForHost(h, new Set());
-      });
-      GM_setValue(INDEX_KEY, '{}');
-      GM_setValue(INLINE_INDEX_KEY, '{}');
-      blocked = loadBlockedForHost(HOST);
-      blockedInline = loadBlockedInlineForHost(HOST);
-      render();
-    });
+    function renderExcludedView(container) {
+      refreshHostState();
 
-    search.addEventListener('input', render);
-    render();
-  }
+      const q = state.excludedSearch.trim().toLowerCase();
+      const all = [...excludedHosts].sort();
+      const visible = all.filter((host) => !q || host.toLowerCase().includes(q));
 
-  function openExcludedHostsPanel() {
-    const ui = openOverlay('Sites excluidos do Script Manager', { lockNavigation: false });
-    if (!ui) return;
+      const topRow = el('div', { className: 'smx-row' });
+      topRow.appendChild(el('input', {
+        className: 'smx-input',
+        placeholder: 'Filtrar host excluído',
+        value: state.excludedSearch,
+        on: {
+          input: (e) => {
+            state.excludedSearch = e.target.value;
+            render();
+          },
+        },
+      }));
+      topRow.appendChild(el('button', {
+        className: isHostExcluded(HOST) ? 'smx-btn smx-btn-primary' : 'smx-btn',
+        type: 'button',
+        text: isHostExcluded(HOST) ? 'Reativar host atual' : 'Excluir host atual',
+        on: {
+          click: () => {
+            setHostExcluded(HOST, !isHostExcluded(HOST));
+            refreshHostState();
+            registerMenuCommand();
+            render();
+          },
+        },
+      }));
+      topRow.appendChild(el('button', {
+        className: 'smx-btn smx-btn-danger',
+        type: 'button',
+        text: 'Remover todas as exclusões',
+        on: {
+          click: () => {
+            excludedHosts = new Set();
+            saveExcludedHosts(excludedHosts);
+            registerMenuCommand();
+            render();
+          },
+        },
+      }));
 
-    const sub = document.createElement('div');
-    sub.className = 'sm-sub';
-    sub.textContent = 'Hosts excluidos ficam totalmente fora dos efeitos do script.';
-    ui.header.appendChild(sub);
+      container.appendChild(card(
+        'Hosts excluídos do script',
+        'Hosts excluídos não recebem bloqueio de scripts, interceptores nem leitura automática. O painel continua disponível pelo menu único.',
+        [
+          topRow,
+          el('div', { className: 'smx-pills' }, [
+            el('span', { className: 'smx-pill', text: `Total excluídos: ${all.length}` }),
+            el('span', { className: 'smx-pill', text: `Host atual: ${isHostExcluded(HOST) ? 'excluído' : 'ativo'}` }),
+          ]),
+        ]
+      ));
 
-    const controls = document.createElement('div');
-    controls.className = 'sm-controls';
-
-    const search = document.createElement('input');
-    search.className = 'sm-input';
-    search.placeholder = 'Filtrar host excluido';
-
-    const clearBtn = document.createElement('button');
-    clearBtn.type = 'button';
-    clearBtn.className = 'sm-btn sm-btn-danger';
-    clearBtn.textContent = 'Remover todas as exclusoes';
-
-    controls.appendChild(search);
-    controls.appendChild(clearBtn);
-    ui.header.appendChild(controls);
-
-    const content = document.createElement('div');
-    ui.body.appendChild(content);
-
-    function render() {
-      const q = (search.value || '').trim().toLowerCase();
-      const all = [...loadExcludedHosts()].sort();
-
-      content.textContent = '';
-
-      const stats = document.createElement('div');
-      stats.className = 'sm-pillbar';
-      stats.innerHTML = `<span class="sm-pill">Total excluidos: ${all.length}</span>`;
-      content.appendChild(stats);
-
-      const section = document.createElement('section');
-      section.className = 'sm-section';
-      const title = document.createElement('h3');
-      title.className = 'sm-section-title';
-      title.textContent = 'Hosts excluidos';
-      section.appendChild(title);
-
-      const visible = all.filter((h) => !q || h.toLowerCase().includes(q));
-      if (visible.length === 0) {
-        const row = document.createElement('div');
-        row.className = 'sm-empty';
-        row.textContent = all.length === 0
-          ? 'Nenhum host excluido.'
-          : 'Nenhum host corresponde ao filtro atual.';
-        section.appendChild(row);
+      const body = [];
+      if (!visible.length) {
+        body.push(el('div', { className: 'smx-empty', text: all.length ? 'Nenhum host corresponde ao filtro atual.' : 'Nenhum host excluído.' }));
       } else {
         visible.forEach((host) => {
-          const details = document.createElement('details');
-          details.className = 'sm-accordion';
-          details.appendChild(
-            createAccordionSummary(
-              host,
-              'Este host esta totalmente ignorado pelo script',
-              'excluido'
-            )
-          );
-
-          const row = document.createElement('div');
-          row.className = 'sm-row';
-          const actions = document.createElement('div');
-          actions.className = 'sm-row-actions';
-          const removeBtn = document.createElement('button');
-          removeBtn.type = 'button';
-          removeBtn.className = 'sm-btn';
-          removeBtn.textContent = 'Reativar host';
-          removeBtn.addEventListener('click', () => {
-            setHostExcluded(host, false);
-            if (host === HOST) excludedHosts = loadExcludedHosts();
-            render();
-          });
-          actions.appendChild(removeBtn);
-          row.appendChild(actions);
-          details.appendChild(row);
-          section.appendChild(details);
+          const row = el('details', { className: 'smx-item' });
+          row.appendChild(summaryNode(host, 'Host ignorado completamente pelo script', host === HOST ? 'host atual' : 'excluído'));
+          row.appendChild(el('div', { className: 'smx-list-row' }, [
+            el('div', { className: 'smx-meta', text: 'Ações deste host excluído' }),
+            el('div', { className: 'smx-row' }, [
+              el('button', {
+                className: 'smx-btn',
+                type: 'button',
+                text: 'Reativar host',
+                on: {
+                  click: () => {
+                    setHostExcluded(host, false);
+                    refreshHostState();
+                    registerMenuCommand();
+                    render();
+                  },
+                },
+              }),
+            ]),
+          ]));
+          body.push(row);
         });
       }
 
-      content.appendChild(section);
+      container.appendChild(card(
+        'Lista de hosts excluídos',
+        'Clique no host para ver a ação de reativação.',
+        body
+      ));
     }
 
-    clearBtn.addEventListener('click', () => {
-      excludedHosts = new Set();
-      saveExcludedHosts(excludedHosts);
-      render();
-    });
+    function render() {
+      views.forEach((v) => {
+        const btn = navButtons.get(v.id);
+        if (btn) btn.setAttribute('data-active', state.view === v.id ? '1' : '0');
+      });
+      shell.main.textContent = '';
+      const renderer = views.find((v) => v.id === state.view)?.render || renderOverviewView;
+      renderer(shell.main);
+    }
 
-    search.addEventListener('input', render);
     render();
   }
 
-  function toggleCurrentHostExclusion() {
-    const currentlyExcluded = isHostExcluded(HOST);
-    setHostExcluded(HOST, !currentlyExcluded);
-    const nowExcluded = !currentlyExcluded;
-    registerMenuCommands();
-    alert(
-      nowExcluded
-        ? `Host excluido: ${HOST}\nA partir do proximo carregamento, o script nao vai atuar neste site.`
-        : `Host reativado: ${HOST}\nRecarregue para voltar a aplicar os bloqueios.`
-    );
-  }
-
-  function exclusionToggleMenuLabel() {
-    return isHostExcluded(HOST)
-      ? 'Reativar este site nos efeitos do script'
-      : 'Excluir este site dos efeitos do script';
-  }
-
-  function registerMenuCommands() {
-    const prevIds = Array.isArray(window.__VINI_SM_MENU_IDS__) ? window.__VINI_SM_MENU_IDS__ : [];
-    if (typeof GM_unregisterMenuCommand === 'function') {
-      prevIds.forEach((id) => {
-        try {
-          GM_unregisterMenuCommand(id);
-        } catch {}
-      });
+  function registerMenuCommand() {
+    if (!IS_TOP) return;
+    const prevId = window.__VINI_SM_MENU_ID__;
+    if (prevId && typeof GM_unregisterMenuCommand === 'function') {
+      try {
+        GM_unregisterMenuCommand(prevId);
+      } catch {}
     }
-
-    const ids = [];
-    const excluded = isHostExcluded(HOST);
-
-    if (!excluded) {
-      ids.push(GM_registerMenuCommand('Abrir painel de scripts (este site)', openSitePanel));
-      ids.push(GM_registerMenuCommand('Gerenciar scripts bloqueados (global)', openGlobalBlockedPanel));
-      ids.push(
-        GM_registerMenuCommand('Ping (diagnostico)', () => {
-          alert(`Script Manager carregou. Topo: ${IS_TOP ? 'sim' : 'nao'} | Host: ${HOST}`);
-        })
-      );
-    }
-
-    ids.push(GM_registerMenuCommand(exclusionToggleMenuLabel(), toggleCurrentHostExclusion));
-    ids.push(GM_registerMenuCommand('Gerenciar sites excluidos', openExcludedHostsPanel));
-    window.__VINI_SM_MENU_IDS__ = ids;
+    window.__VINI_SM_MENU_ID__ = GM_registerMenuCommand('Abrir Painel', buildPanelApp);
   }
 
+  if (IS_TOP) registerMenuCommand();
   if (alreadyLoaded) return;
 
   if (!IS_TOP) {
@@ -1372,11 +1303,7 @@
     return;
   }
 
-  registerMenuCommands();
-
-  if (isHostExcluded(HOST)) {
-    return;
-  }
+  if (isHostExcluded(HOST)) return;
 
   installInterceptors();
   installMutationBlocker();
