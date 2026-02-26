@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Script Manager do Site
 // @namespace    script-manager-do-site.user.js
-// @version      0.9
+// @version      1.0
 // @icon         https://img.icons8.com/?size=100&id=LXhpSVCU82mF&format=png&color=000000
 // @description  Bloqueia scripts externos por host usando chave estável (origin+pathname).
 // @author       lourencosv (GPT)
@@ -39,6 +39,33 @@
   const INDEX_KEY = 'blockedIndex';
   const INLINE_INDEX_KEY = 'blockedInlineIndex';
   const EXCLUDED_KEY = 'excludedHosts';
+  const MENU_LABEL = 'Script Manager: Abrir Painel';
+
+  function lockPageScroll(doc = document) {
+    const html = doc && doc.documentElement;
+    const body = doc && doc.body;
+    if (!html && !body) return () => {};
+    const win = (doc && doc.defaultView) || window;
+    const KEY = "__pjPageScrollLock__";
+    const state = win[KEY] || (win[KEY] = { count: 0, prevHtmlOverflow: "", prevBodyOverflow: "" });
+    if (state.count === 0) {
+      state.prevHtmlOverflow = html ? html.style.overflow : "";
+      state.prevBodyOverflow = body ? body.style.overflow : "";
+      if (html) html.style.overflow = "hidden";
+      if (body) body.style.overflow = "hidden";
+    }
+    state.count += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      state.count = Math.max(0, state.count - 1);
+      if (state.count === 0) {
+        if (html) html.style.overflow = state.prevHtmlOverflow;
+        if (body) body.style.overflow = state.prevBodyOverflow;
+      }
+    };
+  }
 
   function parseJson(raw, fallback) {
     try {
@@ -589,8 +616,7 @@
     const layout = el('div', { className: 'smx-layout' });
     const nav = el('div', { className: 'smx-nav' });
     const main = el('div', { className: 'smx-main' });
-    const prevHtmlOverflow = document.documentElement ? document.documentElement.style.overflow : '';
-    const prevBodyOverflow = document.body ? document.body.style.overflow : '';
+    let unlockPageScroll = () => {};
 
     titleWrap.appendChild(title);
     titleWrap.appendChild(subtitle);
@@ -609,8 +635,7 @@
         overlay.remove();
       } catch {}
       try {
-        if (document.documentElement) document.documentElement.style.overflow = prevHtmlOverflow;
-        if (document.body) document.body.style.overflow = prevBodyOverflow;
+        unlockPageScroll();
       } catch {}
       window.removeEventListener('keydown', onEsc, true);
     }
@@ -627,8 +652,7 @@
 
     whenDomReady(() => {
       try {
-        if (document.documentElement) document.documentElement.style.overflow = 'hidden';
-        if (document.body) document.body.style.overflow = 'hidden';
+        unlockPageScroll = lockPageScroll(document);
       } catch {}
       (document.body || document.documentElement).appendChild(overlay);
     });
@@ -1290,7 +1314,7 @@
         GM_unregisterMenuCommand(prevId);
       } catch {}
     }
-    window.__VINI_SM_MENU_ID__ = GM_registerMenuCommand('Abrir Painel', buildPanelApp);
+    window.__VINI_SM_MENU_ID__ = GM_registerMenuCommand(MENU_LABEL, buildPanelApp);
   }
 
   if (IS_TOP) registerMenuCommand();
