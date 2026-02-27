@@ -6,8 +6,8 @@
 // @description  Marca o clique em continue no go2.pics e mostra um botão flutuante no próximo site aberto.
 // @author       lourencosv (GPT)
 // @license      CC BY-NC 4.0
-// @updateURL    https://gist.githubusercontent.com/lourencosv//raw/botao-telegram-bot.user.js
-// @downloadURL  https://gist.githubusercontent.com/lourencosv//raw/botao-telegram-bot.user.js
+// @updateURL    https://gist.githubusercontent.com/lourencosv/acec6d278e7055ce3623f392e0fb01d6/raw/botao-telegram-bot.user.js
+// @downloadURL  https://gist.githubusercontent.com/lourencosv/acec6d278e7055ce3623f392e0fb01d6/raw/botao-telegram-bot.user.js
 // @match        *://*/*
 // @grant        GM_setValue
 // @grant        GM_getValue
