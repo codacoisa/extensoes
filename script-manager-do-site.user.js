@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Script Manager do Site
 // @namespace    script-manager-do-site.user.js
-// @version      1.0
+// @version      1.1
 // @icon         https://img.icons8.com/?size=100&id=LXhpSVCU82mF&format=png&color=000000
 // @description  Bloqueia scripts externos por host usando chave estável (origin+pathname).
 // @author       lourencosv (GPT)
@@ -39,7 +39,9 @@
   const INDEX_KEY = 'blockedIndex';
   const INLINE_INDEX_KEY = 'blockedInlineIndex';
   const EXCLUDED_KEY = 'excludedHosts';
-  const MENU_LABEL = 'Script Manager: Abrir Painel';
+  const MENU_LABEL = 'Script: Gerenciar Bloqueios';
+  const NATIVE_APPEND_CHILD = Node.prototype.appendChild;
+  const NATIVE_INSERT_BEFORE = Node.prototype.insertBefore;
 
   function lockPageScroll(doc = document) {
     const html = doc && doc.documentElement;
@@ -219,9 +221,6 @@
   }
 
   function installInterceptors() {
-    const originalAppend = Node.prototype.appendChild;
-    const originalInsertBefore = Node.prototype.insertBefore;
-
     function intercept(node) {
       try {
         if (node && node.tagName === 'SCRIPT' && isBlockedScriptElement(node)) {
@@ -235,13 +234,13 @@
     Node.prototype.appendChild = function patchedAppendChild(node) {
       const result = intercept(node);
       if (result) return result;
-      return originalAppend.call(this, node);
+      return NATIVE_APPEND_CHILD.call(this, node);
     };
 
     Node.prototype.insertBefore = function patchedInsertBefore(node, ref) {
       const result = intercept(node);
       if (result) return result;
-      return originalInsertBefore.call(this, node, ref);
+      return NATIVE_INSERT_BEFORE.call(this, node, ref);
     };
   }
 
@@ -617,6 +616,8 @@
     const nav = el('div', { className: 'smx-nav' });
     const main = el('div', { className: 'smx-main' });
     let unlockPageScroll = () => {};
+    let mountObserver = null;
+    let mountRetryTimer = null;
 
     titleWrap.appendChild(title);
     titleWrap.appendChild(subtitle);
@@ -631,6 +632,16 @@
     overlay.appendChild(panel);
 
     function close() {
+      if (mountObserver) {
+        try {
+          mountObserver.disconnect();
+        } catch {}
+        mountObserver = null;
+      }
+      if (mountRetryTimer) {
+        clearTimeout(mountRetryTimer);
+        mountRetryTimer = null;
+      }
       try {
         overlay.remove();
       } catch {}
@@ -650,12 +661,43 @@
     });
     window.addEventListener('keydown', onEsc, true);
 
-    whenDomReady(() => {
+    const mountOverlay = () => {
+      const root = document.body || document.documentElement;
+      if (!root || overlay.isConnected) return false;
+      try {
+        NATIVE_APPEND_CHILD.call(root, overlay);
+      } catch {
+        return false;
+      }
       try {
         unlockPageScroll = lockPageScroll(document);
       } catch {}
-      (document.body || document.documentElement).appendChild(overlay);
-    });
+      return true;
+    };
+
+    if (!mountOverlay()) {
+      mountObserver = new MutationObserver(() => {
+        if (!mountOverlay()) return;
+        try {
+          mountObserver.disconnect();
+        } catch {}
+        mountObserver = null;
+      });
+      try {
+        mountObserver.observe(document, { childList: true, subtree: true });
+      } catch {}
+
+      mountRetryTimer = setTimeout(() => {
+        mountOverlay();
+        if (mountObserver) {
+          try {
+            mountObserver.disconnect();
+          } catch {}
+          mountObserver = null;
+        }
+        mountRetryTimer = null;
+      }, 800);
+    }
 
     return { overlay, panel, head, nav, main, close };
   }
