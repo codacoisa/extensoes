@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Script Manager do Site
 // @namespace    script-manager-do-site.user.js
-// @version      1.1
+// @version      1.2
 // @icon         https://img.icons8.com/?size=100&id=LXhpSVCU82mF&format=png&color=000000
 // @description  Bloqueia scripts externos por host usando chave estável (origin+pathname).
 // @author       lourencosv (GPT)
@@ -39,7 +39,6 @@
   const INDEX_KEY = 'blockedIndex';
   const INLINE_INDEX_KEY = 'blockedInlineIndex';
   const EXCLUDED_KEY = 'excludedHosts';
-  const MENU_LABEL = 'Script: Gerenciar Bloqueios';
   const NATIVE_APPEND_CHILD = Node.prototype.appendChild;
   const NATIVE_INSERT_BEFORE = Node.prototype.insertBefore;
 
@@ -1356,7 +1355,7 @@
         GM_unregisterMenuCommand(prevId);
       } catch {}
     }
-    window.__VINI_SM_MENU_ID__ = GM_registerMenuCommand(MENU_LABEL, buildPanelApp);
+    window.__VINI_SM_MENU_ID__ = GM_registerMenuCommand('Script: Gerenciar Bloqueios', buildPanelApp);
   }
 
   if (IS_TOP) registerMenuCommand();
