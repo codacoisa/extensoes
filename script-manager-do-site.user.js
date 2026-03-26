@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Script Manager do Site
 // @namespace    script-manager-do-site.user.js
-// @version      1.2
+// @version      1.3
 // @icon         https://img.icons8.com/?size=100&id=LXhpSVCU82mF&format=png&color=000000
 // @description  Bloqueia scripts externos por host usando chave estável (origin+pathname).
 // @author       lourencosv (GPT)
@@ -1355,7 +1355,7 @@
         GM_unregisterMenuCommand(prevId);
       } catch {}
     }
-    window.__VINI_SM_MENU_ID__ = GM_registerMenuCommand('Script: Gerenciar Bloqueios', buildPanelApp);
+    window.__VINI_SM_MENU_ID__ = GM_registerMenuCommand('Gerenciar Script Manager do Site', buildPanelApp);
   }
 
   if (IS_TOP) registerMenuCommand();
