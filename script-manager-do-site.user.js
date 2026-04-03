@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Script Manager do Site
 // @namespace    script-manager-do-site.user.js
-// @version      1.3
+// @version      1.4
 // @icon         https://img.icons8.com/?size=100&id=LXhpSVCU82mF&format=png&color=000000
 // @description  Bloqueia scripts externos por host usando chave estável (origin+pathname).
 // @author       lourencosv (GPT)
@@ -287,7 +287,7 @@
 
     GM_addStyle(`
       #smx-overlay {
-        --smx-bg:#f4f7fb;
+        --smx-bg:#f2f6fc;
         --smx-card:#ffffff;
         --smx-card-2:#f8fbff;
         --smx-text:#0f172a;
@@ -310,6 +310,7 @@
         z-index: 2147483647;
         background: rgba(15, 23, 42, .48);
         backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
         color: var(--smx-text);
         font: var(--smx-font);
         overscroll-behavior: contain;
@@ -328,9 +329,9 @@
         overscroll-behavior: contain;
       }
       .smx-head {
-        padding: 14px;
-        border-bottom: 1px solid var(--smx-line);
-        background: linear-gradient(180deg, #fff, #fbfdff);
+        padding: 14px 16px;
+        border-bottom: 1px solid #dbe3ef;
+        background: linear-gradient(135deg, #0f3e75, #1f5ca4);
       }
       .smx-head-top {
         display: flex;
@@ -338,17 +339,20 @@
         justify-content: space-between;
         gap: 12px;
       }
-      .smx-title { margin: 0; font-size: 16px; font-weight: 800; color: var(--smx-text) !important; }
-      .smx-sub { margin-top: 4px; color: var(--smx-muted) !important; font-size: 12px; }
+      .smx-title { margin: 0; font-size: 16px; font-weight: 800; color: #ffffff !important; }
+      .smx-sub { margin-top: 4px; color: rgba(255,255,255,.88) !important; font-size: 12px; }
       .smx-close {
-        border: 1px solid var(--smx-line);
-        background: #fff !important;
-        color: var(--smx-text) !important;
-        border-radius: 12px;
-        padding: 8px 12px;
+        border: 0;
+        background: rgba(255,255,255,.2) !important;
+        color: #ffffff !important;
+        border-radius: 999px;
+        width: 34px;
+        height: 34px;
+        padding: 0;
         cursor: pointer;
         font: inherit;
       }
+      .smx-close:hover { background: rgba(255,255,255,.28) !important; }
       .smx-layout {
         min-height: 0;
         display: grid;
@@ -358,10 +362,10 @@
       .smx-nav {
         border-right: 1px solid var(--smx-line);
         background: #f8fbff;
-        padding: 12px;
+        padding: 14px;
         display: grid;
         align-content: start;
-        gap: 8px;
+        gap: 10px;
         overflow: auto;
         overscroll-behavior: contain;
       }
@@ -380,7 +384,7 @@
         border-radius: 12px;
         background: transparent !important;
         color: var(--smx-text) !important;
-        padding: 10px;
+        padding: 11px 12px;
         cursor: pointer;
         font: inherit;
       }
@@ -396,26 +400,27 @@
         min-height: 0;
         overflow: auto;
         overscroll-behavior: contain;
-        padding: 14px;
+        padding: 16px;
         display: grid;
         align-content: start;
-        gap: 12px;
+        gap: 14px;
       }
-      .smx-grid { display: grid; gap: 12px; grid-template-columns: repeat(12, minmax(0,1fr)); }
+      .smx-grid { display: grid; gap: 14px; grid-template-columns: repeat(12, minmax(0,1fr)); }
       .smx-card {
         background: var(--smx-card);
         border: 1px solid var(--smx-line);
         border-radius: var(--smx-radius);
         overflow: visible;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
       }
       .smx-card-head {
-        padding: 12px 12px 10px;
+        padding: 12px 14px 10px;
         border-bottom: 1px solid var(--smx-line);
-        background: var(--smx-card-2);
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
       }
       .smx-card-title { margin: 0; font-size: 13px; font-weight: 800; color: var(--smx-text) !important; }
       .smx-card-desc { margin-top: 4px; color: var(--smx-muted) !important; font-size: 12px; }
-      .smx-card-body { padding: 12px; display: grid; gap: 10px; }
+      .smx-card-body { padding: 14px; display: grid; gap: 10px; }
       .smx-full { grid-column: span 12; }
       .smx-half { grid-column: span 6; }
       .smx-third { grid-column: span 4; }
