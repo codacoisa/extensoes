@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Botão para Telegram na PSARips
 // @namespace    botao-telegram-bot.user.js
-// @version      1.1
+// @version      1.2
 // @icon         https://img.icons8.com/?size=100&id=ZjsLJhlQchzI&format=png&color=000000
 // @description  Marca o clique em continue no go2.pics e mostra atalhos flutuantes para abrir o bot no Telegram.
 // @author       lourencosv (GPT)
@@ -264,7 +264,6 @@
   function openTelegramDesktop(message) {
     clearPendingWebCompose();
     location.href = getDesktopTelegramUrl(message);
-    tryCloseTabBestEffort();
   }
 
   function openTelegramWeb(message) {
