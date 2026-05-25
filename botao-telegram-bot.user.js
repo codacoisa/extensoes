@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Botão para Telegram na PSARips
 // @namespace    botao-telegram-bot.user.js
-// @version      1.2
+// @version      1.3
 // @icon         https://img.icons8.com/?size=100&id=ZjsLJhlQchzI&format=png&color=000000
 // @description  Marca o clique em continue no go2.pics e mostra atalhos flutuantes para abrir o bot no Telegram.
 // @author       lourencosv (GPT)
@@ -28,6 +28,7 @@
     webComposeKey: '__psa_go2_telegram_web_compose__',
     armTtlMs: 2 * 60 * 1000,
     webComposeTtlMs: 5 * 60 * 1000,
+    desktopCloseDelayMs: 30 * 1000,
     excludedHosts: ['psa.wf', 'go2.pics', 'get-to.link', 't.me', 'telegram.me', 'web.telegram.org'],
     blankFallbackIfCloseFails: false
   };
@@ -196,7 +197,7 @@
     el._hideTimer = setTimeout(() => el.remove(), 2200);
   }
 
-  function tryCloseTabBestEffort() {
+  function tryCloseTabBestEffort(delayMs = 300) {
     setTimeout(() => {
       try { window.close(); } catch (_) {}
 
@@ -264,6 +265,7 @@
   function openTelegramDesktop(message) {
     clearPendingWebCompose();
     location.href = getDesktopTelegramUrl(message);
+    tryCloseTabBestEffort(CFG.desktopCloseDelayMs);
   }
 
   function openTelegramWeb(message) {
