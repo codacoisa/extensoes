@@ -6,8 +6,8 @@
 // @description  Marca o clique em continue no go2.pics e mostra atalhos flutuantes para abrir o bot no Telegram.
 // @author       lourencosv (GPT)
 // @license      CC BY-NC 4.0
-// @updateURL    https://gist.githubusercontent.com/lourencosv/acec6d278e7055ce3623f392e0fb01d6/raw/botao-telegram-bot.user.js
-// @downloadURL  https://gist.githubusercontent.com/lourencosv/acec6d278e7055ce3623f392e0fb01d6/raw/botao-telegram-bot.user.js
+// @updateURL    https://raw.githubusercontent.com/vibeinstance/psa-telegram/refs/heads/main/botao-telegram-bot.user.js
+// @downloadURL  https://raw.githubusercontent.com/vibeinstance/psa-telegram/refs/heads/main/botao-telegram-bot.user.js
 // @match        *://*/*
 // @grant        GM_setValue
 // @grant        GM_getValue
