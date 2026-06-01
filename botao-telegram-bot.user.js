@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Botão para Telegram na PSARips
 // @namespace    botao-telegram-bot.user.js
-// @version      1.3
+// @version      1.4
 // @icon         https://img.icons8.com/?size=100&id=ZjsLJhlQchzI&format=png&color=000000
 // @description  Marca o clique em continue no go2.pics e mostra atalhos flutuantes para abrir o bot no Telegram.
 // @author       lourencosv (GPT)
@@ -28,7 +28,15 @@
     webComposeKey: '__psa_go2_telegram_web_compose__',
     armTtlMs: 2 * 60 * 1000,
     webComposeTtlMs: 5 * 60 * 1000,
+    // Limite maximo: se o usuario nao decidir sobre o pop-up "Abrir Telegram?"
+    // do Safari nesse tempo, fechamos a aba mesmo assim. O fechamento real
+    // costuma ocorrer antes, assim que a aba perde a visibilidade (sinal de
+    // que o pop-up foi aceito e o sistema mudou para o Telegram).
     desktopCloseDelayMs: 30 * 1000,
+    // Apos confirmar o pop-up, esperamos esse intervalo curto para garantir
+    // que o sistema ja transferiu o foco antes de fechar a aba.
+    desktopCloseGracePeriodMs: 500,
+    webCloseDelayMs: 300,
     excludedHosts: ['psa.wf', 'go2.pics', 'get-to.link', 't.me', 'telegram.me', 'web.telegram.org'],
     blankFallbackIfCloseFails: false
   };
@@ -208,7 +216,41 @@
           if (!document.hidden) location.replace('about:blank');
         } catch (_) {}
       }, 400);
-    }, 300);
+    }, delayMs);
+  }
+
+  // Aguarda ate `maxWaitMs`. Se a aba perder visibilidade/foco antes
+  // (sinal de que o usuario confirmou o pop-up "Abrir no Telegram?" do
+  // Safari e o SO trocou para o app), fecha apos um pequeno intervalo
+  // de gracia. Caso contrario, fecha quando o tempo maximo expirar.
+  // Cancela tudo se a aba voltar a ficar visivel (usuario cancelou).
+  function closeTabAfterHandoff(maxWaitMs) {
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('pagehide', onHandoff, true);
+      window.removeEventListener('blur', onHandoff, true);
+      document.removeEventListener('visibilitychange', onVisibilityChange, true);
+      clearTimeout(fallbackTimer);
+    };
+    const closeNow = (delayMs) => {
+      cleanup();
+      tryCloseTabBestEffort(delayMs);
+    };
+    const onHandoff = () => {
+      // Usuario aceitou o pop-up: aba foi para background.
+      closeNow(CFG.desktopCloseGracePeriodMs);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') onHandoff();
+    };
+
+    window.addEventListener('pagehide', onHandoff, true);
+    window.addEventListener('blur', onHandoff, true);
+    document.addEventListener('visibilitychange', onVisibilityChange, true);
+
+    const fallbackTimer = setTimeout(() => closeNow(0), maxWaitMs);
   }
 
   async function copyTextBestEffort(text) {
@@ -265,7 +307,11 @@
   function openTelegramDesktop(message) {
     clearPendingWebCompose();
     location.href = getDesktopTelegramUrl(message);
-    tryCloseTabBestEffort(CFG.desktopCloseDelayMs);
+    // No Safari, navegar para tg:// abre um pop-up "Abrir no Telegram?".
+    // Se fecharmos a aba imediatamente, o pop-up some antes da resposta.
+    // closeTabAfterHandoff espera o usuario confirmar (aba perde foco)
+    // ou ate `desktopCloseDelayMs` como teto.
+    closeTabAfterHandoff(CFG.desktopCloseDelayMs);
   }
 
   function openTelegramWeb(message) {
@@ -283,7 +329,7 @@
       location.href = getWebTelegramUrlA();
     }
 
-    tryCloseTabBestEffort();
+    tryCloseTabBestEffort(CFG.webCloseDelayMs);
   }
 
   function showFloatingActions() {
