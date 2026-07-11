@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenSubtitles: força pt-BR
 // @namespace    opensubtitles-pt-br.user.js
-// @version      1.5
+// @version      1.6
 // @icon         https://img.icons8.com/?size=100&id=qlnCw19aQxaU&format=png&color=000000
 // @description  Redireciona OpenSubtitles para portugues brasileiro e força buscas em pt-BR.
 // @author       lourencosv (GPT)
@@ -44,6 +44,28 @@
 
   if (url.pathname + url.search !== before) {
     window.location.replace(url.toString());
+  }
+
+  if (host.endsWith('opensubtitles.org')) {
+    // Safari may restore the site's mixed pob,por filter after document-start.
+    window.addEventListener('pageshow', normalizeCurrentOrgLocation);
+    window.addEventListener('popstate', normalizeCurrentOrgLocation);
+    window.addEventListener('load', normalizeCurrentOrgLocation);
+  }
+
+  function normalizeCurrentOrgLocation() {
+    const currentUrl = new URL(window.location.href);
+    if (currentUrl.href.includes('.within.website')) return;
+
+    const currentParts = currentUrl.pathname.split('/').filter(Boolean);
+    const currentBefore = currentUrl.pathname + currentUrl.search;
+
+    normalizeOpenSubtitlesOrg(currentUrl, currentParts);
+    currentUrl.pathname = '/' + currentParts.join('/');
+
+    if (currentUrl.pathname + currentUrl.search !== currentBefore) {
+      window.location.replace(currentUrl.toString());
+    }
   }
 
   function normalizeOpenSubtitlesOrg(targetUrl, parts) {
