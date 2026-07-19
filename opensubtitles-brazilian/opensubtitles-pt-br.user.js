@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         OpenSubtitles: força pt-BR
 // @namespace    opensubtitles-pt-br.user.js
-// @version      1.6
+// @version      1.7
 // @icon         https://img.icons8.com/?size=100&id=qlnCw19aQxaU&format=png&color=000000
 // @description  Redireciona OpenSubtitles para portugues brasileiro e força buscas em pt-BR.
 // @author       lourencosv (GPT)
 // @license      CC BY-NC 4.0
-// @updateURL    https://raw.githubusercontent.com/vibeinstance/opensubtitles-brazilian/refs/heads/main/opensubtitles-pt-br.user.js
-// @downloadURL  https://raw.githubusercontent.com/vibeinstance/opensubtitles-brazilian/refs/heads/main/opensubtitles-pt-br.user.js
+// @updateURL    https://raw.githubusercontent.com/codacoisa/extensoes/refs/heads/main/opensubtitles-brazilian/opensubtitles-pt-br.user.js
+// @downloadURL  https://raw.githubusercontent.com/codacoisa/extensoes/refs/heads/main/opensubtitles-brazilian/opensubtitles-pt-br.user.js
 // @match        https://www.opensubtitles.org/*
 // @match        https://www.opensubtitles.com/*
 // @run-at       document-start
