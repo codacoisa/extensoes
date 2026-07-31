@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         GitHub Fork Finder Button
 // @namespace    https://github.com/codacoisa/github-tools
-// @version      2026-07-31-14:26
+// @version      2026-07-31-14:34
 // @description  Adiciona um botão Fork Finder ao lado do botão Fork nos repositórios do GitHub.
 // @author       codacoisa
 // @match        https://github.com/*/*
 // @icon         https://github.githubassets.com/favicons/favicon.svg
 // @grant        none
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/codacoisa/github-tools/main/fork-finder.user.js
-// @updateURL    https://raw.githubusercontent.com/codacoisa/github-tools/main/fork-finder.user.js
+// @downloadURL  https://raw.githubusercontent.com/codacoisa/github-tools/main/github-tools.user.js
+// @updateURL    https://raw.githubusercontent.com/codacoisa/github-tools/main/github-tools.user.js
 // ==/UserScript==
 
 (function () {

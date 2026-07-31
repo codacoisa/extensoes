@@ -20,7 +20,7 @@ https://github.com/alienator88/Pearcleaner
 1. Instale um gerenciador de userscripts compatível com seu navegador, como
    Tampermonkey ou Userscripts.
 2. Abra o arquivo
-   [`fork-finder.user.js`](https://raw.githubusercontent.com/codacoisa/github-tools/main/fork-finder.user.js).
+   [`github-tools.user.js`](https://raw.githubusercontent.com/codacoisa/github-tools/main/github-tools.user.js).
 3. Confirme a instalação no gerenciador de userscripts.
 
-Versão inicial: `2026-07-31-14:26`.
+Versão atual: `2026-07-31-14:34`.
