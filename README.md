@@ -23,4 +23,4 @@ https://github.com/alienator88/Pearcleaner
    [`github-tools.user.js`](https://raw.githubusercontent.com/codacoisa/github-tools/main/github-tools.user.js).
 3. Confirme a instalação no gerenciador de userscripts.
 
-Versão atual: `2026-07-31-14:34`.
+Versão atual: `2026-07-31-14:42`.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Fork Finder Button
 // @namespace    https://github.com/codacoisa/github-tools
-// @version      2026-07-31-14:34
+// @version      2026-07-31-14:42
 // @description  Adiciona um botão Fork Finder ao lado do botão Fork nos repositórios do GitHub.
 // @author       codacoisa
 // @match        https://github.com/*/*
@@ -49,8 +49,14 @@
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     link.className = forkControl.className;
+    [...link.classList].forEach((className) => {
+      if (/^(?:ButtonGroup|BtnGroup)-item/.test(className)) {
+        link.classList.remove(className);
+      }
+    });
     link.setAttribute('aria-label', `Abrir ${repository.owner}/${repository.repository} no Fork Finder`);
     link.textContent = 'Fork Finder';
+    link.style.whiteSpace = 'nowrap';
 
     if (forkControl.hasAttribute('data-view-component')) {
       link.setAttribute('data-view-component', 'true');
@@ -78,7 +84,9 @@
     if (!forkControl) return;
 
     const link = createButton(forkControl, repository);
-    const listItem = forkControl.closest('.pagehead-actions > li');
+    const forkGroup = forkControl.closest('.ButtonGroup, .BtnGroup');
+    const insertionTarget = forkGroup || forkControl;
+    const listItem = insertionTarget.closest('li');
 
     if (listItem) {
       const newListItem = document.createElement('li');
@@ -88,7 +96,8 @@
       return;
     }
 
-    forkControl.after(link);
+    link.style.marginInlineStart = 'var(--base-size-8, 8px)';
+    insertionTarget.after(link);
   }
 
   let scheduled = false;
