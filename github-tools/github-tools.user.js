@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-01-16:30
+// @version      2026-08-01-16:45
 // @description  Adiciona customizações ao GitHub.
 // @author       codacoisa
 // @match        https://github.com/*/*
@@ -267,6 +267,8 @@
     icon.setAttribute('height', '16');
     icon.setAttribute('fill', 'currentColor');
     icon.setAttribute('data-view-component', 'true');
+    icon.style.flex = '0 0 auto';
+    icon.style.verticalAlign = 'middle';
     icon.classList.add('octicon', 'octicon-database', 'mr-1');
 
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -338,6 +340,9 @@
     label.dataset.repoKey = cacheKey;
     label.className = 'Label Label--info Label--accent v-align-middle ml-1 tooltipped tooltipped-s';
     label.setAttribute('aria-label', 'Tamanho do repositório');
+    label.style.display = 'inline-flex';
+    label.style.alignItems = 'center';
+    label.style.verticalAlign = 'middle';
     label.textContent = '…';
     nameLink.after(label);
 
