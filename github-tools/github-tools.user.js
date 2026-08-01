@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-01-16:45
+// @version      2026-08-01-17:15
 // @description  Adiciona customizações ao GitHub.
 // @author       codacoisa
 // @match        https://github.com/*/*
@@ -41,6 +41,11 @@
     `  font-size: var(--text-body-size-medium, 14px);`,
     `  font-weight: var(--base-text-weight-medium, 500);`,
     `  line-height: var(--text-body-lineHeight-medium, 1.5);`,
+    `  box-sizing: border-box;`,
+    `  display: inline-flex;`,
+    `  align-items: center;`,
+    `  justify-content: center;`,
+    `  vertical-align: middle;`,
     `  text-decoration: none;`,
     `  white-space: nowrap;`,
     `  transition: 80ms cubic-bezier(0.33, 1, 0.68, 1);`,
@@ -110,7 +115,7 @@
     link.setAttribute('aria-label', `Abrir ${repository.owner}/${repository.repository} no Fork Finder`);
     link.textContent = 'Fork Finder';
     link.style.whiteSpace = 'nowrap';
-    copyButtonTypography(forkControl, link);
+    copyButtonStyles(forkControl, link);
 
     if (forkControl.hasAttribute('data-view-component')) {
       link.setAttribute('data-view-component', 'true');
@@ -119,14 +124,31 @@
     return link;
   }
 
-  // O GitHub aplica a tipografia do botão nativo com regras que podem variar
+  // O GitHub aplica as dimensões do botão nativo com regras que podem variar
   // entre componentes e tamanhos. Copiar os valores calculados evita que um
-  // link herde uma fonte, peso ou altura de linha diferentes.
-  function copyButtonTypography(source, target) {
+  // link tenha altura, padding, raio ou tipografia diferentes.
+  function copyButtonStyles(source, target) {
     if (!source || !target) return;
 
     const computed = window.getComputedStyle(source);
-    ['font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing'].forEach((property) => {
+    [
+      'font-family',
+      'font-size',
+      'font-weight',
+      'font-style',
+      'line-height',
+      'letter-spacing',
+      'display',
+      'align-items',
+      'justify-content',
+      'box-sizing',
+      'height',
+      'min-height',
+      'padding',
+      'border-radius',
+      'vertical-align',
+      'gap',
+    ].forEach((property) => {
       target.style.setProperty(property, computed.getPropertyValue(property));
     });
   }
@@ -144,7 +166,7 @@
     if (existingButton) {
       if (existingButton.href !== expectedUrl) existingButton.href = expectedUrl;
       const forkControl = findForkControl();
-      if (forkControl) copyButtonTypography(forkControl, existingButton);
+      if (forkControl) copyButtonStyles(forkControl, existingButton);
       return;
     }
 
@@ -343,6 +365,7 @@
     label.style.display = 'inline-flex';
     label.style.alignItems = 'center';
     label.style.verticalAlign = 'middle';
+    label.style.transform = 'translateY(-1px)';
     label.textContent = '…';
     nameLink.after(label);
 
