@@ -34,7 +34,7 @@ Semelhante ao script
 1. Instale um gerenciador de userscripts compatível com seu navegador, como
    Tampermonkey ou Userscripts.
 2. Abra o arquivo
-   [`github-tools.user.js`](https://raw.githubusercontent.com/codacoisa/github-tools/main/github-tools.user.js).
+   [`github-tools.user.js`](https://raw.githubusercontent.com/codacoisa/extensoes/main/github-tools/github-tools.user.js).
 3. Confirme a instalação no gerenciador de userscripts.
 
-Versão atual: `2026-08-01-16:00`.
+Versão atual: `2026-08-01-16:30`.

@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         GitHub Tools
-// @namespace    https://github.com/codacoisa/github-tools
-// @version      2026-08-01-16:15
+// @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
+// @version      2026-08-01-16:30
 // @description  Adiciona customizações ao GitHub.
 // @author       codacoisa
 // @match        https://github.com/*/*
 // @icon         https://github.githubassets.com/favicons/favicon.svg
 // @grant        none
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/codacoisa/github-tools/main/github-tools.user.js
-// @updateURL    https://raw.githubusercontent.com/codacoisa/github-tools/main/github-tools.user.js
+// @downloadURL  https://raw.githubusercontent.com/codacoisa/extensoes/main/github-tools/github-tools.user.js
+// @updateURL    https://raw.githubusercontent.com/codacoisa/extensoes/main/github-tools/github-tools.user.js
 // ==/UserScript==
 
 (function () {
