@@ -19,10 +19,11 @@ https://github.com/alienator88/Pearcleaner
 
 ## Tamanho do repositório
 
-Exibe o tamanho do repositório ao lado do nome do repositório no cabeçalho da
-página (ex.: `15.2 MB`), usando a API pública do GitHub. O valor é armazenado
-em cache por 24 horas para não exceder o limite de requisições da API
-(60/h sem autenticação). Repositórios privados não têm o tamanho exibido,
+Exibe o tamanho do repositório ao lado do nome no cabeçalho da página
+(ex.: `15.2 MB`), usando a API pública do GitHub. O rótulo usa o ícone nativo
+do GitHub e é atualizado também durante a navegação interna do site. O valor é
+armazenado em cache por 24 horas para não exceder o limite de requisições da
+API (60/h sem autenticação). Repositórios privados não têm o tamanho exibido,
 pois exigiriam um token de acesso.
 
 Semelhante ao script
@@ -36,4 +37,4 @@ Semelhante ao script
    [`github-tools.user.js`](https://raw.githubusercontent.com/codacoisa/github-tools/main/github-tools.user.js).
 3. Confirme a instalação no gerenciador de userscripts.
 
-Versão atual: `2026-08-01-14:30`.
+Versão atual: `2026-08-01-16:00`.
