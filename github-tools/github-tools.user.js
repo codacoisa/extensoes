@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-02-15:55
+// @version      2026-08-02-16:20
 // @description  Adiciona customizações ao GitHub.
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
@@ -113,6 +113,11 @@
       owner: owner.toLowerCase(),
       repository: repository.toLowerCase(),
     };
+  }
+
+  function isRepositoryRootOrTreeRoute() {
+    const segments = location.pathname.split('/').filter(Boolean);
+    return segments.length === 2 || (segments.length >= 4 && segments[2].toLowerCase() === 'tree');
   }
 
   function findForkControl() {
@@ -828,12 +833,10 @@
       return FOLDER_ICON_BY_NAME[fileName] || faIcon('fa-solid fa-folder', 'folder');
     }
 
-    if (Object.prototype.hasOwnProperty.call(FILE_ICON_BY_NAME, fileName)) {
-      return FILE_ICON_BY_NAME[fileName];
-    }
-
     const extension = fileName.includes('.') ? fileName.split('.').pop() : '';
-    return FILE_ICON_BY_EXTENSION[extension] || faIcon('fa-solid fa-file');
+    return FILE_ICON_BY_EXTENSION[extension]
+      || FILE_ICON_BY_NAME[fileName]
+      || faIcon('fa-solid fa-file');
   }
 
   function getIconPresentation(definition, fileName) {
@@ -941,11 +944,10 @@
       return REFERENCE_FOLDER_TYPES[fileName] || createReferenceType('folder-src', '#3b82f6');
     }
 
-    const namedType = REFERENCE_FILE_NAMES[fileName];
-    if (namedType) return namedType;
-
-    const extension = fileName.includes('.') ? fileName.split('.').pop() : fileName;
-    return REFERENCE_FILE_TYPES[extension] || createReferenceType('document', getReferenceFallbackColor(extension));
+    const extension = fileName.includes('.') ? fileName.split('.').pop() : '';
+    return REFERENCE_FILE_TYPES[extension]
+      || REFERENCE_FILE_NAMES[fileName]
+      || createReferenceType('document', getReferenceFallbackColor(extension || fileName));
   }
 
   function getReferenceFallbackColor(value) {
@@ -1001,6 +1003,7 @@
       const isDirectory = /\/tree\//i.test(link.pathname)
         || iconCandidate?.classList.contains('octicon-file-directory-fill')
         || iconCandidate?.classList.contains('icon-directory');
+      if (isDirectory) return;
 
       const referenceType = getReferenceFileType(fileName, isDirectory);
       const definition = getFileIconDefinition(fileName, isDirectory);
@@ -1204,11 +1207,13 @@
   let scheduled = false;
 
   function scheduleUpdate() {
+    if (!isRepositoryRootOrTreeRoute()) return;
     if (scheduled) return;
     scheduled = true;
 
     requestAnimationFrame(() => {
       scheduled = false;
+      if (!isRepositoryRootOrTreeRoute()) return;
       addButton();
       addCloneButton();
       addFileIcons();
@@ -1216,10 +1221,12 @@
     });
   }
 
-  addButton();
-  addCloneButton();
-  addFileIcons();
-  addRepositorySize();
+  if (isRepositoryRootOrTreeRoute()) {
+    addButton();
+    addCloneButton();
+    addFileIcons();
+    addRepositorySize();
+  }
 
   new MutationObserver(scheduleUpdate).observe(document.documentElement, {
     childList: true,
