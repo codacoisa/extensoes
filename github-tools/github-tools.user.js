@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-01-22:19
+// @version      2026-08-02-03:41
 // @description  Adiciona customizações ao GitHub.
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
@@ -20,6 +20,7 @@
   const BUTTON_MARKER = 'data-fork-finder-button';
   const CLONE_BUTTON_MARKER = 'data-github-tools-clone-button';
   const FILE_ICON_MARKER = 'data-github-tools-file-icon';
+  const FILE_ICON_FALLBACK_MARKER = 'data-github-tools-file-icon-fallback';
   const SIZE_MARKER = 'data-repo-size-label';
   // v2 invalida resultados nulos gravados pela implementação anterior, que
   // podia esconder o tamanho mesmo depois de o cabeçalho ser encontrado.
@@ -27,7 +28,8 @@
   const SIZE_CACHE_TTL = 24 * 60 * 60 * 1000;
   const SIZE_RATE_LIMIT_TTL = 60 * 60 * 1000;
   const FORK_FINDER_URL = 'https://forkfinder.getinfotoyou.com/repo';
-  const FILE_ICON_BASE_URL = 'https://raw.githubusercontent.com/PKief/vscode-material-icon-theme/main/icons';
+  // Repositório atual do tema de ícones (renomeado de PKief para material-extensions).
+  const FILE_ICON_BASE_URL = 'https://raw.githubusercontent.com/material-extensions/vscode-material-icon-theme/main/icons';
 
   // Octicon "database", usado pelo GitHub para indicar tamanho/armazenamento.
   const DATABASE_ICON =
@@ -438,7 +440,7 @@
     yml: 'yaml',
     yaml: 'yaml',
     xml: 'xml',
-    csv: 'csv',
+    csv: 'table',
     pdf: 'pdf',
     zip: 'zip',
     gz: 'zip',
@@ -479,11 +481,46 @@
   }
 
   function getFileIconName(fileName, isDirectory) {
-    if (isDirectory) return 'folder';
+    // O tema não possui folder.svg, mas possui um ícone base de pasta.
+    if (isDirectory) return 'folder-base';
     if (FILE_ICON_BY_NAME[fileName]) return FILE_ICON_BY_NAME[fileName];
 
     const extension = fileName.includes('.') ? fileName.split('.').pop() : '';
-    return FILE_ICON_BY_EXTENSION[extension] || 'file';
+    // 'document' é o ícone genérico de arquivo que existe no tema (o antigo
+    // 'file' não existe e produzia itens sem ícone).
+    return FILE_ICON_BY_EXTENSION[extension] || 'document';
+  }
+
+  function createGenericFallbackIcon(isDirectory) {
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.setAttribute('focusable', 'false');
+    icon.setAttribute('viewBox', '0 0 16 16');
+    icon.setAttribute('width', '16');
+    icon.setAttribute('height', '16');
+    icon.setAttribute('fill', 'currentColor');
+    icon.classList.add('octicon', isDirectory ? 'octicon-file-directory-fill' : 'octicon-file');
+    icon.setAttribute(FILE_ICON_FALLBACK_MARKER, '');
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', isDirectory
+      ? 'M1.75 1.5h4.5c.464 0 .91.184 1.237.513L8.5 3h5.75A1.75 1.75 0 0 1 16 4.75v7.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25v-9A1.75 1.75 0 0 1 1.75 1.5Zm0 1.5a.25.25 0 0 0-.25.25v9c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25H8.19a.75.75 0 0 1-.53-.22L7.19 3.5a.75.75 0 0 0-.53-.22Z'
+      : 'M3 1.5h6.75L13 4.75v9.5a.25.25 0 0 1-.25.25h-9.5a.25.25 0 0 1-.25-.25v-12.5a.25.25 0 0 1 .25-.25Zm6 1.5H4.5V13h7V5h-2.5V3Z');
+    icon.appendChild(path);
+    return icon;
+  }
+
+  function createFileIconImage(iconName, fallback) {
+    const image = document.createElement('img');
+    image.setAttribute(FILE_ICON_MARKER, '');
+    image.setAttribute('aria-hidden', 'true');
+    image.alt = '';
+    image.dataset.iconName = iconName;
+    image.src = `${FILE_ICON_BASE_URL}/${iconName}.svg`;
+    image.addEventListener('error', () => {
+      if (image.isConnected) image.replaceWith(fallback);
+    }, { once: true });
+    return image;
   }
 
   function addFileIcons() {
@@ -498,28 +535,47 @@
       if (!link) return;
 
       const row = link.closest('tr, [role="row"], .Box-row, .js-navigation-item, li') || link.parentElement;
-      const icon = row?.querySelector('svg:not([data-github-tools-file-icon-fallback])');
-      if (!icon || icon.closest(`[${FILE_ICON_MARKER}]`)) return;
+      if (!row) return;
+
+      const managedImage = row.querySelector(`img[${FILE_ICON_MARKER}]`);
+      const fallbackIcon = row.querySelector(`svg[${FILE_ICON_FALLBACK_MARKER}]`);
+      const nativeIcon = row.querySelector(`svg:not([${FILE_ICON_FALLBACK_MARKER}])`);
 
       const fileName = getFileNameFromLink(link);
       if (!fileName) return;
 
       const isDirectory = /\/tree\//i.test(link.pathname)
-        || icon.classList.contains('octicon-file-directory-fill')
-        || icon.classList.contains('icon-directory');
-      const image = document.createElement('img');
-      image.setAttribute(FILE_ICON_MARKER, '');
-      image.setAttribute('aria-hidden', 'true');
-      image.alt = '';
-      image.src = `${FILE_ICON_BASE_URL}/${getFileIconName(fileName, isDirectory)}.svg`;
+        || nativeIcon?.classList.contains('octicon-file-directory-fill')
+        || nativeIcon?.classList.contains('icon-directory');
 
-      const fallback = icon.cloneNode(true);
-      fallback.setAttribute('data-github-tools-file-icon-fallback', '');
-      image.addEventListener('error', () => {
-        if (image.isConnected) image.replaceWith(fallback);
-      }, { once: true });
+      const iconName = getFileIconName(fileName, isDirectory);
+      const expectedSource = `${FILE_ICON_BASE_URL}/${iconName}.svg`;
 
-      icon.replaceWith(image);
+      // Uma imagem da implementação anterior pode ter ficado no DOM durante
+      // a navegação SPA. Reaproveita somente a imagem que corresponde à linha
+      // atual; imagens antigas ou quebradas são substituídas abaixo.
+      if (managedImage
+        && managedImage.src === expectedSource
+        && !(managedImage.complete && managedImage.naturalWidth === 0)) return;
+
+      // Se o fallback já está visível, não recria a imagem a cada ciclo do
+      // MutationObserver enquanto a rede continua indisponível.
+      if (fallbackIcon && !managedImage) return;
+
+      const fallback = nativeIcon?.cloneNode(true) || createGenericFallbackIcon(isDirectory);
+      fallback.setAttribute(FILE_ICON_FALLBACK_MARKER, '');
+      const image = createFileIconImage(iconName, fallback);
+
+      if (managedImage) {
+        managedImage.replaceWith(image);
+      } else if (nativeIcon) {
+        nativeIcon.replaceWith(image);
+      } else {
+        // O GitHub pode montar a linha sem o SVG nativo. Nesse caso, insere o
+        // ícone gerenciado junto ao link, sem depender de uma atualização da
+        // página para fazê-lo aparecer.
+        link.prepend(image);
+      }
     });
   }
 
