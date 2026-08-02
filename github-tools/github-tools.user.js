@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-02-03:59
+// @version      2026-08-02-04:08
 // @description  Adiciona customizações ao GitHub.
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
@@ -43,17 +43,7 @@
     link.crossOrigin = 'anonymous';
     link.referrerPolicy = 'no-referrer';
     link.setAttribute(FONT_AWESOME_LINK_MARKER, '');
-    link.addEventListener('load', async () => {
-      if (document.fonts?.load) {
-        try {
-          await Promise.all([
-            document.fonts.load('900 16px "Font Awesome 6 Free"'),
-            document.fonts.load('400 16px "Font Awesome 6 Brands"'),
-          ]);
-        } catch {
-          return;
-        }
-      }
+    link.addEventListener('load', () => {
       document.documentElement.setAttribute(FONT_AWESOME_READY_MARKER, '');
     }, { once: true });
     link.addEventListener('error', () => {
