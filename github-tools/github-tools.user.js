@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-01-17:15
+// @version      2026.8.1
 // @description  Adiciona customizações ao GitHub.
-// @author       codacoisa
+// @author       lourencosv
+// @contributor  Codex <codex@openai.com>
+// @contributor  Claude <noreply@anthropic.com>
 // @match        https://github.com/*/*
 // @icon         https://github.githubassets.com/favicons/favicon.svg
 // @grant        none
@@ -16,6 +18,8 @@
   'use strict';
 
   const BUTTON_MARKER = 'data-fork-finder-button';
+  const CLONE_BUTTON_MARKER = 'data-github-tools-clone-button';
+  const FILE_ICON_MARKER = 'data-github-tools-file-icon';
   const SIZE_MARKER = 'data-repo-size-label';
   // v2 invalida resultados nulos gravados pela implementação anterior, que
   // podia esconder o tamanho mesmo depois de o cabeçalho ser encontrado.
@@ -23,6 +27,7 @@
   const SIZE_CACHE_TTL = 24 * 60 * 60 * 1000;
   const SIZE_RATE_LIMIT_TTL = 60 * 60 * 1000;
   const FORK_FINDER_URL = 'https://forkfinder.getinfotoyou.com/repo';
+  const FILE_ICON_BASE_URL = 'https://raw.githubusercontent.com/PKief/vscode-material-icon-theme/main/icons';
 
   // Octicon "database", usado pelo GitHub para indicar tamanho/armazenamento.
   const DATABASE_ICON =
@@ -59,6 +64,27 @@
     `a[${BUTTON_MARKER}]:active {`,
     `  background-color: var(--button-default-bgColor-active, var(--color-btn-active-bg, hsla(220, 14%, 94%, 1)));`,
     `  border-color: var(--button-default-borderColor-active, var(--color-btn-active-border, rgba(27, 31, 36, 0.15)));`,
+    `}`, 
+    `button[${CLONE_BUTTON_MARKER}], a[${CLONE_BUTTON_MARKER}] {`,
+    `  display: inline-flex;`,
+    `  align-items: center;`,
+    `  justify-content: center;`,
+    `  min-width: 32px;`,
+    `  min-height: 32px;`,
+    `  padding: 5px 8px;`,
+    `  margin-inline-start: var(--base-size-8, 8px);`,
+    `}`,
+    `button[${CLONE_BUTTON_MARKER}] svg, a[${CLONE_BUTTON_MARKER}] svg {`,
+    `  display: block;`,
+    `  flex: 0 0 auto;`,
+    `}`,
+    `img[${FILE_ICON_MARKER}] {`,
+    `  width: 16px !important;`,
+    `  height: 16px !important;`,
+    `  margin: 0 4px 0 0 !important;`,
+    `  object-fit: scale-down;`,
+    `  vertical-align: text-bottom;`,
+    `  flex: 0 0 auto;`,
     `}`,
   ].join('\n');
   document.head.appendChild(style);
@@ -100,6 +126,24 @@
     return buttonLike || matches[0];
   }
 
+  function findStandaloneControl(excludedControl) {
+    const candidates = document.querySelectorAll([
+      '#repository-container-header button',
+      '#repository-container-header a[role="button"]',
+      '#repo-title-component button',
+      '#repo-title-component a[role="button"]',
+      'button.Button',
+      'button',
+    ].join(','));
+
+    return [...candidates].find((element) => {
+      if (element === excludedControl) return false;
+      if (element.closest('.ButtonGroup, .BtnGroup, details')) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    }) || null;
+  }
+
   function createButton(forkControl, repository) {
     const link = document.createElement('a');
     link.setAttribute(BUTTON_MARKER, '');
@@ -115,13 +159,26 @@
     link.setAttribute('aria-label', `Abrir ${repository.owner}/${repository.repository} no Fork Finder`);
     link.textContent = 'Fork Finder';
     link.style.whiteSpace = 'nowrap';
-    copyButtonStyles(forkControl, link);
+    normalizeButtonStyles(forkControl, link);
 
     if (forkControl.hasAttribute('data-view-component')) {
       link.setAttribute('data-view-component', 'true');
     }
 
     return link;
+  }
+
+  function normalizeButtonStyles(source, target) {
+    copyButtonStyles(source, target);
+
+    const standaloneControl = findStandaloneControl(source);
+    if (standaloneControl) {
+      target.style.borderRadius = window.getComputedStyle(standaloneControl).borderRadius;
+    } else if (source.closest('.ButtonGroup, .BtnGroup, details')) {
+      target.style.borderRadius = 'var(--borderRadius-medium, 6px)';
+    }
+    target.style.borderStyle = 'solid';
+    target.style.borderWidth = '1px';
   }
 
   // O GitHub aplica as dimensões do botão nativo com regras que podem variar
@@ -146,6 +203,8 @@
       'min-height',
       'padding',
       'border-radius',
+      'border-style',
+      'border-width',
       'vertical-align',
       'gap',
     ].forEach((property) => {
@@ -166,7 +225,7 @@
     if (existingButton) {
       if (existingButton.href !== expectedUrl) existingButton.href = expectedUrl;
       const forkControl = findForkControl();
-      if (forkControl) copyButtonStyles(forkControl, existingButton);
+      if (forkControl) normalizeButtonStyles(forkControl, existingButton);
       return;
     }
 
@@ -189,6 +248,279 @@
 
     link.style.marginInlineStart = 'var(--base-size-8, 8px)';
     insertionTarget.after(link);
+  }
+
+  function getCloneCommand() {
+    const repository = getRepository();
+    if (!repository) return null;
+
+    return {
+      key: `${repository.owner}/${repository.repository}`,
+      command: `git clone --recurse-submodules https://github.com/${repository.owner}/${repository.repository}.git`,
+    };
+  }
+
+  function findCodeButton() {
+    const candidates = document.querySelectorAll([
+      '#repository-container-header button',
+      '#repository-container-header summary',
+      '#repo-title-component button',
+      'button',
+      'summary',
+      'a[role="button"]',
+    ].join(','));
+
+    return [...candidates].find((element) => {
+      const text = (element.textContent || '').replace(/\s+/g, ' ').trim();
+      const label = (element.getAttribute('aria-label') || '').trim();
+      return /^(?:code|código)$/i.test(text)
+        || /^(?:code|código)(?:\s+(?:menu|button))?$/i.test(label);
+    }) || null;
+  }
+
+  function createCopyIcon() {
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.setAttribute('focusable', 'false');
+    icon.setAttribute('viewBox', '0 0 16 16');
+    icon.setAttribute('width', '16');
+    icon.setAttribute('height', '16');
+    icon.setAttribute('fill', 'currentColor');
+    icon.classList.add('octicon', 'octicon-copy');
+
+    const paths = [
+      'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z',
+      'M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5c.138 0 .25-.112.25-.25v-7.5a.25.25 0 0 0-.25-.25Z',
+    ];
+
+    paths.forEach((pathData) => {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', pathData);
+      icon.appendChild(path);
+    });
+
+    return icon;
+  }
+
+  async function copyText(text) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+
+    if (!copied) throw new Error('Não foi possível copiar o comando');
+  }
+
+  function showToast(message, isError = false) {
+    document.querySelector('[data-github-tools-toast]')?.remove();
+
+    const toast = document.createElement('div');
+    toast.setAttribute('data-github-tools-toast', '');
+    toast.setAttribute('role', 'status');
+    toast.textContent = message;
+    Object.assign(toast.style, {
+      position: 'fixed',
+      top: '16px',
+      right: '16px',
+      zIndex: '9999',
+      maxWidth: 'min(520px, calc(100vw - 32px))',
+      padding: '8px 12px',
+      border: '1px solid var(--borderColor-default, rgba(27, 31, 36, 0.15))',
+      borderRadius: '6px',
+      background: isError ? 'var(--bgColor-danger-emphasis, #cf222e)' : 'var(--bgColor-success-emphasis, #1f883d)',
+      color: 'var(--fgColor-onEmphasis, #fff)',
+      boxShadow: '0 3px 8px rgba(31, 35, 40, 0.15)',
+      font: '500 14px/1.4 var(--fontStack-sansSerif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)',
+    });
+    document.body.appendChild(toast);
+    window.setTimeout(() => toast.remove(), 2200);
+  }
+
+  function addCloneButton() {
+    const clone = getCloneCommand();
+    const existing = document.querySelector(`[${CLONE_BUTTON_MARKER}]`);
+
+    if (!clone) {
+      existing?.remove();
+      return;
+    }
+
+    const codeButton = findCodeButton();
+    if (!codeButton) {
+      if (existing?.dataset.repoKey !== clone.key) existing?.remove();
+      return;
+    }
+
+    if (existing && existing.dataset.repoKey === clone.key) {
+      if (existing.previousElementSibling !== codeButton) codeButton.after(existing);
+      existing.title = clone.command;
+      return;
+    }
+    existing?.remove();
+
+    const copyButton = codeButton.cloneNode(true);
+    copyButton.setAttribute(CLONE_BUTTON_MARKER, '');
+    copyButton.dataset.repoKey = clone.key;
+    copyButton.removeAttribute('id');
+    copyButton.removeAttribute('aria-haspopup');
+    copyButton.removeAttribute('aria-expanded');
+    copyButton.removeAttribute('aria-describedby');
+    copyButton.removeAttribute('href');
+    copyButton.setAttribute('aria-label', 'Copiar comando de clone');
+    copyButton.title = clone.command;
+    if (copyButton instanceof HTMLButtonElement) copyButton.type = 'button';
+
+    const content = copyButton.querySelector('[data-component="buttonContent"]');
+    if (content) {
+      content.replaceChildren(createCopyIcon());
+    } else {
+      copyButton.replaceChildren(createCopyIcon());
+    }
+
+    copyButton.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      try {
+        await copyText(clone.command);
+        showToast('Comando de clone copiado');
+      } catch (error) {
+        showToast('Não foi possível copiar o comando', true);
+      }
+    });
+
+    codeButton.after(copyButton);
+  }
+
+  const FILE_ICON_BY_EXTENSION = {
+    js: 'javascript',
+    jsx: 'react',
+    ts: 'typescript',
+    tsx: 'react_ts',
+    mjs: 'javascript',
+    cjs: 'javascript',
+    json: 'json',
+    html: 'html',
+    htm: 'html',
+    css: 'css',
+    scss: 'sass',
+    sass: 'sass',
+    less: 'less',
+    md: 'markdown',
+    mdx: 'mdx',
+    py: 'python',
+    rb: 'ruby',
+    go: 'go',
+    rs: 'rust',
+    java: 'java',
+    kt: 'kotlin',
+    kts: 'kotlin',
+    php: 'php',
+    vue: 'vue',
+    svelte: 'svelte',
+    sql: 'database',
+    graphql: 'graphql',
+    gql: 'graphql',
+    sh: 'console',
+    bash: 'console',
+    zsh: 'console',
+    ps1: 'powershell',
+    yml: 'yaml',
+    yaml: 'yaml',
+    xml: 'xml',
+    csv: 'csv',
+    pdf: 'pdf',
+    zip: 'zip',
+    gz: 'zip',
+    png: 'image',
+    jpg: 'image',
+    jpeg: 'image',
+    gif: 'image',
+    webp: 'image',
+    svg: 'svg',
+    ico: 'image',
+    mp3: 'audio',
+    wav: 'audio',
+    mp4: 'video',
+    mov: 'video',
+    lock: 'lock',
+  };
+
+  const FILE_ICON_BY_NAME = {
+    dockerfile: 'docker',
+    '.dockerignore': 'docker',
+    '.env': 'tune',
+    '.gitignore': 'git',
+    '.gitattributes': 'git',
+    '.gitmodules': 'git',
+    'package.json': 'nodejs',
+    'package-lock.json': 'nodejs',
+    'pnpm-lock.yaml': 'nodejs',
+    'yarn.lock': 'nodejs',
+  };
+
+  function getFileNameFromLink(link) {
+    try {
+      const pathname = new URL(link.href, location.href).pathname;
+      return decodeURIComponent(pathname.split('/').filter(Boolean).pop() || '').toLowerCase();
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function getFileIconName(fileName, isDirectory) {
+    if (isDirectory) return 'folder';
+    if (FILE_ICON_BY_NAME[fileName]) return FILE_ICON_BY_NAME[fileName];
+
+    const extension = fileName.includes('.') ? fileName.split('.').pop() : '';
+    return FILE_ICON_BY_EXTENSION[extension] || 'file';
+  }
+
+  function addFileIcons() {
+    const entries = document.querySelectorAll([
+      '.react-directory-truncate[href]',
+      '.react-directory-truncate a[href]',
+      '.js-navigation-open[href]',
+    ].join(','));
+
+    entries.forEach((entry) => {
+      const link = entry.matches('a[href]') ? entry : entry.querySelector('a[href]');
+      if (!link) return;
+
+      const row = link.closest('tr, [role="row"], .Box-row, .js-navigation-item, li') || link.parentElement;
+      const icon = row?.querySelector('svg:not([data-github-tools-file-icon-fallback])');
+      if (!icon || icon.closest(`[${FILE_ICON_MARKER}]`)) return;
+
+      const fileName = getFileNameFromLink(link);
+      if (!fileName) return;
+
+      const isDirectory = /\/tree\//i.test(link.pathname)
+        || icon.classList.contains('octicon-file-directory-fill')
+        || icon.classList.contains('icon-directory');
+      const image = document.createElement('img');
+      image.setAttribute(FILE_ICON_MARKER, '');
+      image.setAttribute('aria-hidden', 'true');
+      image.alt = '';
+      image.src = `${FILE_ICON_BASE_URL}/${getFileIconName(fileName, isDirectory)}.svg`;
+
+      const fallback = icon.cloneNode(true);
+      fallback.setAttribute('data-github-tools-file-icon-fallback', '');
+      image.addEventListener('error', () => {
+        if (image.isConnected) image.replaceWith(fallback);
+      }, { once: true });
+
+      icon.replaceWith(image);
+    });
   }
 
   // ---- Tamanho do repositório ----
@@ -394,11 +726,15 @@
     requestAnimationFrame(() => {
       scheduled = false;
       addButton();
+      addCloneButton();
+      addFileIcons();
       addRepositorySize();
     });
   }
 
   addButton();
+  addCloneButton();
+  addFileIcons();
   addRepositorySize();
 
   new MutationObserver(scheduleUpdate).observe(document.documentElement, {
