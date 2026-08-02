@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-02-04:41
+// @version      2026-08-02-05:14
 // @description  Adiciona customizações ao GitHub.
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
@@ -20,6 +20,7 @@
   const BUTTON_MARKER = 'data-fork-finder-button';
   const CLONE_BUTTON_MARKER = 'data-github-tools-clone-button';
   const FILE_ICON_MARKER = 'data-github-tools-file-icon';
+  const FILE_TYPE_MARKER = 'data-github-tools-file-type';
   const SIZE_MARKER = 'data-repo-size-label';
   const SIZE_CACHE_KEY = 'github-tools:repo-size-cache:v2';
   const SIZE_CACHE_TTL = 24 * 60 * 60 * 1000;
@@ -72,35 +73,33 @@
     `  display: block;`,
     `  flex: 0 0 auto;`,
     `}`,
+    `a[${FILE_TYPE_MARKER}] {`,
+    `  font-weight: 500;`,
+    `}`,
+    `a[${FILE_TYPE_MARKER}="${':folder'}"] {`,
+    `  font-weight: 700;`,
+    `}`,
+    `img[${FILE_ICON_MARKER}] {`,
+    `  display: inline-block !important;`,
+    `  width: 24px !important;`,
+    `  height: 24px !important;`,
+    `  margin: 0 -4px !important;`,
+    `  object-fit: scale-down;`,
+    `  vertical-align: middle;`,
+    `  flex: 0 0 auto;`,
+    `}`,
     `span[${FILE_ICON_MARKER}] {`,
     `  display: inline-flex;`,
-    `  align-items: center;`,
-    `  justify-content: center;`,
     `  width: 16px;`,
-    `  min-width: 16px;`,
     `  height: 16px;`,
     `  margin: 0 4px 0 0;`,
-    `  line-height: 1;`,
     `  vertical-align: text-bottom;`,
-    `  flex: 0 0 16px;`,
-    `}`,
-    `span[${FILE_ICON_MARKER}][data-icon-kind="folder"] {`,
-    `  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));`,
     `}`,
     `span[${FILE_ICON_MARKER}] .github-tools-file-icon-svg {`,
     `  display: block;`,
     `  width: 16px;`,
     `  height: 16px;`,
     `  fill: currentColor;`,
-    `}`,
-    `img[${FILE_ICON_MARKER}] {`,
-    `  display: none !important;`,
-    `  width: 16px !important;`,
-    `  height: 16px !important;`,
-    `  margin: 0 4px 0 0 !important;`,
-    `  object-fit: scale-down;`,
-    `  vertical-align: text-bottom;`,
-    `  flex: 0 0 auto;`,
     `}`,
   ].join('\n');
   document.head.appendChild(style);
@@ -674,6 +673,147 @@
     '.config': faIcon('fa-solid fa-gears', 'folder'),
   });
 
+  const MATERIAL_ICON_BASE = 'https://raw.githubusercontent.com/material-extensions/vscode-material-icon-theme/main/icons/';
+  const createReferenceType = (icon, color) => Object.freeze({ icon, color });
+  const REFERENCE_TYPE_GROUPS = [
+    [['js', 'jsx', 'mjs', 'cjs'], 'javascript', '#b07219'],
+    [['ts', 'tsx'], 'typescript', '#007acc'],
+    [['json', 'json5', 'jsonc'], 'json', '#e44b23'],
+    [['html', 'htm', 'xhtml'], 'html', '#3498db'],
+    [['css', 'scss', 'sass', 'less', 'styl'], 'css', '#e67e22'],
+    [['vue'], 'vue', '#41b883'],
+    [['svelte'], 'svelte', '#ff3e00'],
+    [['astro'], 'astro', '#ff5d01'],
+    [['py', 'pyw'], 'python', '#3572a5'],
+    [['rb', 'rake'], 'ruby', '#701516'],
+    [['go'], 'go', '#00add8'],
+    [['rs'], 'rust', '#dea584'],
+    [['java'], 'java', '#b07219'],
+    [['kt', 'kts'], 'kotlin', '#7f52ff'],
+    [['php'], 'php', '#4f5d95'],
+    [['c'], 'c', '#555555'],
+    [['h', 'cc', 'cpp', 'cxx', 'hpp'], 'cpp', '#f34b7d'],
+    [['cs'], 'csharp', '#178600'],
+    [['swift'], 'swift', '#ffac45'],
+    [['dart'], 'dart', '#00b4ab'],
+    [['lua'], 'lua', '#000080'],
+    [['pl', 'pm'], 'perl', '#0298c3'],
+    [['r'], 'r', '#198ce7'],
+    [['scala'], 'scala', '#dc322f'],
+    [['groovy'], 'groovy', '#4298b8'],
+    [['ex', 'exs'], 'elixir', '#6e4a7e'],
+    [['erl', 'hrl'], 'erlang', '#b83998'],
+    [['fs', 'fsx'], 'fsharp', '#378bba'],
+    [['vb'], 'csharp', '#945db7'],
+    [['asm'], 'assembly', '#6e4c13'],
+    [['sql', 'graphql', 'gql'], 'database', '#eab308'],
+    [['sh', 'bash', 'zsh', 'fish'], 'console', '#89e051'],
+    [['ps1', 'psm1'], 'powershell', '#0298c3'],
+    [['bat', 'cmd'], 'console', '#4eaa25'],
+    [['yml', 'yaml'], 'yaml', '#e44b23'],
+    [['toml', 'xml', 'xsd', 'ini', 'conf', 'config', 'properties', 'env'], 'settings', '#64748b'],
+    [['md', 'markdown', 'mdx'], 'markdown', '#6e5494'],
+    [['txt', 'log', 'rst', 'adoc'], 'document', '#7f8c8d'],
+    [['pdf'], 'pdf', '#ef4444'],
+    [['doc', 'docx', 'odt', 'rtf'], 'document', '#2e77c0'],
+    [['xls', 'xlsx', 'ods', 'csv', 'tsv'], 'table', '#16a34a'],
+    [['ppt', 'pptx', 'odp'], 'table', '#f97316'],
+    [['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp', 'tiff', 'avif'], 'image', '#a855f7'],
+    [['mp3', 'wav', 'ogg', 'flac'], 'audio', '#ec4899'],
+    [['mp4', 'mov', 'webm', 'avi'], 'video', '#dc2626'],
+    [['zip', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar', 'tar'], 'zip', '#9b59b6'],
+    [['ttf', 'otf', 'woff', 'woff2'], 'font', '#f39c12'],
+    [['lock'], 'lock', '#64748b'],
+  ];
+  const REFERENCE_FILE_TYPES = Object.freeze(Object.fromEntries(
+    REFERENCE_TYPE_GROUPS.flatMap(([extensions, icon, color]) => extensions.map((extension) => [
+      extension,
+      createReferenceType(icon, color),
+    ])),
+  ));
+  const REFERENCE_FILE_NAMES = Object.freeze({
+    dockerfile: createReferenceType('docker', '#2496ed'),
+    '.dockerignore': createReferenceType('docker', '#2496ed'),
+    'package.json': createReferenceType('npm', '#cb3837'),
+    'package-lock.json': createReferenceType('npm', '#cb3837'),
+    'pnpm-lock.yaml': createReferenceType('npm', '#cb3837'),
+    'yarn.lock': createReferenceType('yarn', '#2c8ebb'),
+    'bun.lock': createReferenceType('javascript', '#f7df1e'),
+    'bun.lockb': createReferenceType('javascript', '#f7df1e'),
+    'go.mod': createReferenceType('go', '#00add8'),
+    'go.sum': createReferenceType('go', '#00add8'),
+    'cargo.toml': createReferenceType('rust', '#dea584'),
+    'cargo.lock': createReferenceType('lock', '#64748b'),
+    requirements: createReferenceType('python', '#3572a5'),
+    'requirements.txt': createReferenceType('python', '#3572a5'),
+    'pyproject.toml': createReferenceType('python', '#3572a5'),
+    'setup.py': createReferenceType('python', '#3572a5'),
+    '.gitignore': createReferenceType('git', '#f05032'),
+    '.gitattributes': createReferenceType('git', '#f05032'),
+    '.gitmodules': createReferenceType('git', '#f05032'),
+    gitmessage: createReferenceType('git', '#f05032'),
+    'readme.md': createReferenceType('markdown', '#e67e22'),
+    readme: createReferenceType('markdown', '#e67e22'),
+    'changelog.md': createReferenceType('markdown', '#e67e22'),
+    changelog: createReferenceType('markdown', '#e67e22'),
+    'agents.md': createReferenceType('markdown', '#6e5494'),
+    'code_of_conduct.md': createReferenceType('markdown', '#6e5494'),
+    'contributing.md': createReferenceType('markdown', '#6e5494'),
+    'security.md': createReferenceType('markdown', '#6e5494'),
+    license: createReferenceType('license', '#8b5cf6'),
+    'license.md': createReferenceType('license', '#8b5cf6'),
+    notice: createReferenceType('license', '#8b5cf6'),
+    makefile: createReferenceType('console', '#334155'),
+    cmakelists: createReferenceType('console', '#334155'),
+    'cmakelists.txt': createReferenceType('console', '#334155'),
+    justfile: createReferenceType('console', '#334155'),
+    procfile: createReferenceType('console', '#334155'),
+    '.env': createReferenceType('settings', '#64748b'),
+    '.env.example': createReferenceType('settings', '#64748b'),
+    '.nvmrc': createReferenceType('nodejs', '#83cd29'),
+    '.tool-versions': createReferenceType('settings', '#64748b'),
+    '.editorconfig': createReferenceType('settings', '#64748b'),
+    '.prettierrc': createReferenceType('settings', '#64748b'),
+    '.eslintrc': createReferenceType('settings', '#64748b'),
+    'biome.json': createReferenceType('settings', '#64748b'),
+    'tsconfig.json': createReferenceType('typescript', '#007acc'),
+    'vite.config.js': createReferenceType('settings', '#646cff'),
+    'vite.config.ts': createReferenceType('settings', '#646cff'),
+  });
+  const REFERENCE_FOLDER_TYPES = Object.freeze({
+    '.github': createReferenceType('folder-github', '#24292f'),
+    '.git': createReferenceType('folder-git', '#f05032'),
+    '.vscode': createReferenceType('folder-vscode', '#007acc'),
+    '.agents': createReferenceType('folder-robot', '#8b5cf6'),
+    '.claude': createReferenceType('folder-robot', '#8b5cf6'),
+    '.cline': createReferenceType('folder-robot', '#8b5cf6'),
+    '.codex': createReferenceType('folder-robot', '#8b5cf6'),
+    '.changeset': createReferenceType('folder-config', '#64748b'),
+    '.husky': createReferenceType('folder-scripts', '#334155'),
+    node_modules: createReferenceType('folder-node', '#83cd29'),
+    docker: createReferenceType('folder-docker', '#2496ed'),
+    docs: createReferenceType('folder-docs', '#e67e22'),
+    test: createReferenceType('folder-test', '#22c55e'),
+    tests: createReferenceType('folder-test', '#22c55e'),
+    e2e: createReferenceType('folder-test', '#22c55e'),
+    evals: createReferenceType('folder-test', '#22c55e'),
+    assets: createReferenceType('folder-images', '#f59e0b'),
+    images: createReferenceType('folder-images', '#f59e0b'),
+    public: createReferenceType('folder-public', '#f59e0b'),
+    src: createReferenceType('folder-src', '#8b5cf6'),
+    lib: createReferenceType('folder-src', '#8b5cf6'),
+    apps: createReferenceType('folder-packages', '#8b5cf6'),
+    packages: createReferenceType('folder-packages', '#8b5cf6'),
+    sdk: createReferenceType('folder-src', '#8b5cf6'),
+    build: createReferenceType('folder-dist', '#64748b'),
+    dist: createReferenceType('folder-dist', '#64748b'),
+    target: createReferenceType('folder-target', '#64748b'),
+    scripts: createReferenceType('folder-scripts', '#334155'),
+    tools: createReferenceType('folder-tools', '#334155'),
+    config: createReferenceType('folder-config', '#64748b'),
+    '.config': createReferenceType('folder-config', '#64748b'),
+  });
+
   function getFileNameFromLink(link) {
     try {
       const pathname = new URL(link.href, location.href).pathname;
@@ -796,6 +936,45 @@
     return wrapper;
   }
 
+  function getReferenceFileType(fileName, isDirectory) {
+    if (isDirectory) {
+      return REFERENCE_FOLDER_TYPES[fileName] || createReferenceType('folder-src', '#3b82f6');
+    }
+
+    const namedType = REFERENCE_FILE_NAMES[fileName];
+    if (namedType) return namedType;
+
+    const extension = fileName.includes('.') ? fileName.split('.').pop() : fileName;
+    return REFERENCE_FILE_TYPES[extension] || createReferenceType('document', getReferenceFallbackColor(extension));
+  }
+
+  function getReferenceFallbackColor(value) {
+    let hash = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      hash = ((hash << 5) - hash) + value.charCodeAt(index);
+      hash |= 0;
+    }
+    return `hsl(${Math.abs(hash) % 360} 62% 42%)`;
+  }
+
+  function createReferenceFileIcon(fileName, isDirectory, referenceType, fallbackDefinition) {
+    const icon = document.createElement('img');
+    icon.setAttribute(FILE_ICON_MARKER, '');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.alt = referenceType.icon;
+    icon.dataset.iconType = referenceType.icon;
+    icon.dataset.iconKind = isDirectory ? 'folder' : 'file';
+    icon.src = `${MATERIAL_ICON_BASE}${referenceType.icon}.svg`;
+    icon.addEventListener('error', () => {
+      const fallback = createFileIcon(fallbackDefinition, fileName);
+      fallback.dataset.iconType = referenceType.icon;
+      fallback.dataset.iconKind = isDirectory ? 'folder' : 'file';
+      fallback.dataset.iconFallback = 'true';
+      icon.replaceWith(fallback);
+    }, { once: true });
+    return icon;
+  }
+
   function addFileIcons() {
     const repository = getRepository();
     if (!repository) return;
@@ -814,26 +993,30 @@
       const nameCell = link.closest('td, [role="gridcell"], [role="cell"]') || link.parentElement;
       const managedIcon = nameCell.querySelector(`[${FILE_ICON_MARKER}]`);
       const nativeIcon = nameCell.querySelector('svg.octicon-file, svg.octicon-file-directory-fill, svg[class*="icon-directory"]');
+      const iconCandidate = managedIcon?.querySelector('svg') || nativeIcon;
 
       const fileName = getFileNameFromLink(link);
       if (!fileName) return;
 
       const isDirectory = /\/tree\//i.test(link.pathname)
-        || nativeIcon?.classList.contains('octicon-file-directory-fill')
-        || nativeIcon?.classList.contains('icon-directory');
+        || iconCandidate?.classList.contains('octicon-file-directory-fill')
+        || iconCandidate?.classList.contains('icon-directory');
 
+      const referenceType = getReferenceFileType(fileName, isDirectory);
       const definition = getFileIconDefinition(fileName, isDirectory);
+      const typeKey = isDirectory ? ':folder' : (REFERENCE_FILE_NAMES[fileName] ? fileName : fileName.includes('.') ? fileName.split('.').pop() : fileName);
+      link.setAttribute(FILE_TYPE_MARKER, typeKey);
+      link.style.setProperty('color', referenceType.color, 'important');
 
       if (managedIcon
-        && managedIcon.dataset.iconClass === definition.className
-        && managedIcon.dataset.iconKind === definition.kind) return;
+        && managedIcon.dataset.iconType === referenceType.icon
+        && managedIcon.dataset.iconKind === (isDirectory ? 'folder' : 'file')) return;
 
-      const icon = createFileIcon(definition, fileName);
+      const icon = createReferenceFileIcon(fileName, isDirectory, referenceType, definition);
+      const oldIcon = managedIcon || nativeIcon;
 
-      if (managedIcon) {
-        managedIcon.replaceWith(icon);
-      } else if (nativeIcon) {
-        nativeIcon.replaceWith(icon);
+      if (oldIcon) {
+        oldIcon.replaceWith(icon);
       } else {
         link.before(icon);
       }
