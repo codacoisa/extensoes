@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-02-03:41
+// @version      2026-08-02-03:59
 // @description  Adiciona customizações ao GitHub.
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
@@ -21,22 +21,49 @@
   const CLONE_BUTTON_MARKER = 'data-github-tools-clone-button';
   const FILE_ICON_MARKER = 'data-github-tools-file-icon';
   const FILE_ICON_FALLBACK_MARKER = 'data-github-tools-file-icon-fallback';
+  const FONT_AWESOME_LINK_MARKER = 'data-github-tools-fontawesome';
+  const FONT_AWESOME_READY_MARKER = 'data-github-tools-fontawesome-ready';
   const SIZE_MARKER = 'data-repo-size-label';
-  // v2 invalida resultados nulos gravados pela implementação anterior, que
-  // podia esconder o tamanho mesmo depois de o cabeçalho ser encontrado.
   const SIZE_CACHE_KEY = 'github-tools:repo-size-cache:v2';
   const SIZE_CACHE_TTL = 24 * 60 * 60 * 1000;
   const SIZE_RATE_LIMIT_TTL = 60 * 60 * 1000;
   const FORK_FINDER_URL = 'https://forkfinder.getinfotoyou.com/repo';
-  // Repositório atual do tema de ícones (renomeado de PKief para material-extensions).
-  const FILE_ICON_BASE_URL = 'https://raw.githubusercontent.com/material-extensions/vscode-material-icon-theme/main/icons';
+  const FONT_AWESOME_CSS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css';
 
-  // Octicon "database", usado pelo GitHub para indicar tamanho/armazenamento.
   const DATABASE_ICON =
     'M1 3.5c0-.626.292-1.165.7-1.59.406-.422.956-.767 1.579-1.041C4.525.32 6.195 0 8 0c1.805 0 3.475.32 4.722.869.622.274 1.172.62 1.578 1.04.408.426.7.965.7 1.591v9c0 .626-.292 1.165-.7 1.59-.406.422-.956.767-1.579 1.041C11.476 15.68 9.806 16 8 16c-1.805 0-3.475-.32-4.721-.869-.623-.274-1.173-.62-1.579-1.04C1.292 13.665 1 13.126 1 12.5v-9Zm1.5 0c0 .133.058.318.282.551.227.237.591.483 1.101.707C4.898 5.205 6.353 5.5 8 5.5c1.646 0 3.101-.295 4.118-.742.508-.224.873-.471 1.1-.708.224-.232.282-.417.282-.55 0-.133-.058-.318-.282-.551-.227-.237-.591-.483-1.101-.707C11.102 1.795 9.647 1.5 8 1.5c-1.646 0-3.101.295-4.118.742-.508.224-.873.471-1.1.708-.224.232-.282.417-.282.55Zm0 4.5c0 .133.058.318.282.551.227.237.591.483 1.101.707C4.898 9.705 6.353 10 8 10c1.646 0 3.101-.295 4.118-.742.508-.224.873-.471 1.1-.708.224-.232.282-.417.282-.55V5.724c-.241.15-.503.286-.778.407C11.475 6.68 9.805 7 8 7c-1.805 0-3.475-.32-4.721-.869a6.15 6.15 0 0 1-.779-.407v2.276Zm0 2.225V12.5c0 .133.058.318.282.55.227.233.592.484 1.1.708 1.016.447 2.471.742 4.118.742 1.647 0 3.102-.295 4.117-.742.51-.224.874-.475 1.101-.707.224-.233.282-.418.282-.551v-2.275c-.241.15-.503.285-.778.406C11.475 11.18 9.805 11.5 8 11.5c-1.805 0-3.475-.32-4.721-.869a6.327 6.327 0 0 1-.779-.406Z';
 
-  // Usa os tokens atuais do Primer e mantém os tokens antigos como fallback.
-  // Isso acompanha os temas claro e escuro sem fixar uma cor específica.
+  function loadFontAwesome() {
+    const existingLink = document.querySelector(`link[${FONT_AWESOME_LINK_MARKER}]`);
+    if (existingLink) return;
+
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = FONT_AWESOME_CSS_URL;
+    link.crossOrigin = 'anonymous';
+    link.referrerPolicy = 'no-referrer';
+    link.setAttribute(FONT_AWESOME_LINK_MARKER, '');
+    link.addEventListener('load', async () => {
+      if (document.fonts?.load) {
+        try {
+          await Promise.all([
+            document.fonts.load('900 16px "Font Awesome 6 Free"'),
+            document.fonts.load('400 16px "Font Awesome 6 Brands"'),
+          ]);
+        } catch {
+          return;
+        }
+      }
+      document.documentElement.setAttribute(FONT_AWESOME_READY_MARKER, '');
+    }, { once: true });
+    link.addEventListener('error', () => {
+      document.documentElement.removeAttribute(FONT_AWESOME_READY_MARKER);
+    }, { once: true });
+    document.head.appendChild(link);
+  }
+
+  loadFontAwesome();
+
   const style = document.createElement('style');
   style.textContent = [
     `a[${BUTTON_MARKER}] {`,
@@ -66,7 +93,7 @@
     `a[${BUTTON_MARKER}]:active {`,
     `  background-color: var(--button-default-bgColor-active, var(--color-btn-active-bg, hsla(220, 14%, 94%, 1)));`,
     `  border-color: var(--button-default-borderColor-active, var(--color-btn-active-border, rgba(27, 31, 36, 0.15)));`,
-    `}`, 
+    `}`,
     `button[${CLONE_BUTTON_MARKER}], a[${CLONE_BUTTON_MARKER}] {`,
     `  display: inline-flex;`,
     `  align-items: center;`,
@@ -80,7 +107,39 @@
     `  display: block;`,
     `  flex: 0 0 auto;`,
     `}`,
+    `span[${FILE_ICON_MARKER}] {`,
+    `  display: inline-flex;`,
+    `  align-items: center;`,
+    `  justify-content: center;`,
+    `  width: 16px;`,
+    `  min-width: 16px;`,
+    `  height: 16px;`,
+    `  margin: 0 4px 0 0;`,
+    `  line-height: 1;`,
+    `  vertical-align: text-bottom;`,
+    `  flex: 0 0 16px;`,
+    `}`,
+    `span[${FILE_ICON_MARKER}][data-icon-kind="folder"] {`,
+    `  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));`,
+    `}`,
+    `span[${FILE_ICON_MARKER}] .github-tools-file-icon-fa {`,
+    `  display: none;`,
+    `  font-size: 14px;`,
+    `  line-height: 1;`,
+    `}`,
+    `span[${FILE_ICON_MARKER}] .github-tools-file-icon-fallback {`,
+    `  display: inline-block;`,
+    `  width: 16px;`,
+    `  height: 16px;`,
+    `}`,
+    `html[${FONT_AWESOME_READY_MARKER}] span[${FILE_ICON_MARKER}] .github-tools-file-icon-fa {`,
+    `  display: inline-block;`,
+    `}`,
+    `html[${FONT_AWESOME_READY_MARKER}] span[${FILE_ICON_MARKER}] .github-tools-file-icon-fallback {`,
+    `  display: none;`,
+    `}`,
     `img[${FILE_ICON_MARKER}] {`,
+    `  display: none !important;`,
     `  width: 16px !important;`,
     `  height: 16px !important;`,
     `  margin: 0 4px 0 0 !important;`,
@@ -118,8 +177,6 @@
 
     if (matches.length === 0) return null;
 
-    // Prefere controles que são botões de verdade do GitHub (evita, por
-    // exemplo, o link "51 forks" da barra lateral, que não é um botão).
     const buttonLike = matches.find((element) => {
       const className = element.className || '';
       return element.matches('button, summary') || /(^|\s)(Button|btn)(\s|$)/.test(className);
@@ -183,9 +240,6 @@
     target.style.borderWidth = '1px';
   }
 
-  // O GitHub aplica as dimensões do botão nativo com regras que podem variar
-  // entre componentes e tamanhos. Copiar os valores calculados evita que um
-  // link tenha altura, padding, raio ou tipografia diferentes.
   function copyButtonStyles(source, target) {
     if (!source || !target) return;
 
@@ -396,7 +450,7 @@
       try {
         await copyText(clone.command);
         showToast('Comando de clone copiado');
-      } catch (error) {
+      } catch {
         showToast('Não foi possível copiar o comando', true);
       }
     });
@@ -404,91 +458,249 @@
     codeButton.after(copyButton);
   }
 
-  const FILE_ICON_BY_EXTENSION = {
-    js: 'javascript',
-    jsx: 'react',
-    ts: 'typescript',
-    tsx: 'react_ts',
-    mjs: 'javascript',
-    cjs: 'javascript',
-    json: 'json',
-    html: 'html',
-    htm: 'html',
-    css: 'css',
-    scss: 'sass',
-    sass: 'sass',
-    less: 'less',
-    md: 'markdown',
-    mdx: 'mdx',
-    py: 'python',
-    rb: 'ruby',
-    go: 'go',
-    rs: 'rust',
-    java: 'java',
-    kt: 'kotlin',
-    kts: 'kotlin',
-    php: 'php',
-    vue: 'vue',
-    svelte: 'svelte',
-    sql: 'database',
-    graphql: 'graphql',
-    gql: 'graphql',
-    sh: 'console',
-    bash: 'console',
-    zsh: 'console',
-    ps1: 'powershell',
-    yml: 'yaml',
-    yaml: 'yaml',
-    xml: 'xml',
-    csv: 'table',
-    pdf: 'pdf',
-    zip: 'zip',
-    gz: 'zip',
-    png: 'image',
-    jpg: 'image',
-    jpeg: 'image',
-    gif: 'image',
-    webp: 'image',
-    svg: 'svg',
-    ico: 'image',
-    mp3: 'audio',
-    wav: 'audio',
-    mp4: 'video',
-    mov: 'video',
-    lock: 'lock',
-  };
+  const faIcon = (className, kind = 'file') => Object.freeze({ className, kind });
 
-  const FILE_ICON_BY_NAME = {
-    dockerfile: 'docker',
-    '.dockerignore': 'docker',
-    '.env': 'tune',
-    '.gitignore': 'git',
-    '.gitattributes': 'git',
-    '.gitmodules': 'git',
-    'package.json': 'nodejs',
-    'package-lock.json': 'nodejs',
-    'pnpm-lock.yaml': 'nodejs',
-    'yarn.lock': 'nodejs',
-  };
+  const FILE_ICON_BY_EXTENSION = Object.freeze({
+    js: faIcon('fa-brands fa-js', 'brand'),
+    jsx: faIcon('fa-brands fa-react', 'brand'),
+    ts: faIcon('fa-solid fa-file-code'),
+    tsx: faIcon('fa-brands fa-react', 'brand'),
+    mjs: faIcon('fa-brands fa-js', 'brand'),
+    cjs: faIcon('fa-brands fa-js', 'brand'),
+    json: faIcon('fa-solid fa-file-code'),
+    json5: faIcon('fa-solid fa-file-code'),
+    jsonc: faIcon('fa-solid fa-file-code'),
+    html: faIcon('fa-brands fa-html5', 'brand'),
+    htm: faIcon('fa-brands fa-html5', 'brand'),
+    xhtml: faIcon('fa-brands fa-html5', 'brand'),
+    css: faIcon('fa-brands fa-css3-alt', 'brand'),
+    scss: faIcon('fa-solid fa-file-code'),
+    sass: faIcon('fa-solid fa-file-code'),
+    less: faIcon('fa-solid fa-file-code'),
+    styl: faIcon('fa-solid fa-file-code'),
+    vue: faIcon('fa-brands fa-vuejs', 'brand'),
+    svelte: faIcon('fa-solid fa-file-code'),
+    astro: faIcon('fa-solid fa-file-code'),
+
+    py: faIcon('fa-brands fa-python', 'brand'),
+    pyw: faIcon('fa-brands fa-python', 'brand'),
+    rb: faIcon('fa-solid fa-gem'),
+    rake: faIcon('fa-solid fa-gem'),
+    go: faIcon('fa-brands fa-golang', 'brand'),
+    rs: faIcon('fa-solid fa-file-code'),
+    java: faIcon('fa-brands fa-java', 'brand'),
+    kt: faIcon('fa-solid fa-file-code'),
+    kts: faIcon('fa-solid fa-file-code'),
+    php: faIcon('fa-brands fa-php', 'brand'),
+    c: faIcon('fa-solid fa-file-code'),
+    h: faIcon('fa-solid fa-file-code'),
+    cc: faIcon('fa-solid fa-file-code'),
+    cpp: faIcon('fa-solid fa-file-code'),
+    cxx: faIcon('fa-solid fa-file-code'),
+    hpp: faIcon('fa-solid fa-file-code'),
+    cs: faIcon('fa-solid fa-file-code'),
+    swift: faIcon('fa-brands fa-swift', 'brand'),
+    dart: faIcon('fa-solid fa-file-code'),
+    lua: faIcon('fa-solid fa-file-code'),
+    pl: faIcon('fa-solid fa-file-code'),
+    pm: faIcon('fa-solid fa-file-code'),
+    r: faIcon('fa-brands fa-r-project', 'brand'),
+    scala: faIcon('fa-solid fa-file-code'),
+    groovy: faIcon('fa-solid fa-file-code'),
+    ex: faIcon('fa-solid fa-file-code'),
+    exs: faIcon('fa-solid fa-file-code'),
+    erl: faIcon('fa-solid fa-file-code'),
+    hrl: faIcon('fa-solid fa-file-code'),
+    fs: faIcon('fa-solid fa-file-code'),
+    fsx: faIcon('fa-solid fa-file-code'),
+    vb: faIcon('fa-solid fa-file-code'),
+    asm: faIcon('fa-solid fa-file-code'),
+
+    sql: faIcon('fa-solid fa-database'),
+    graphql: faIcon('fa-solid fa-file-code'),
+    gql: faIcon('fa-solid fa-file-code'),
+    sh: faIcon('fa-solid fa-terminal'),
+    bash: faIcon('fa-solid fa-terminal'),
+    zsh: faIcon('fa-solid fa-terminal'),
+    fish: faIcon('fa-solid fa-terminal'),
+    ps1: faIcon('fa-solid fa-terminal'),
+    psm1: faIcon('fa-solid fa-terminal'),
+    bat: faIcon('fa-solid fa-terminal'),
+    cmd: faIcon('fa-solid fa-terminal'),
+    yml: faIcon('fa-solid fa-file-code'),
+    yaml: faIcon('fa-solid fa-file-code'),
+    toml: faIcon('fa-solid fa-file-code'),
+    xml: faIcon('fa-solid fa-file-code'),
+    xsd: faIcon('fa-solid fa-file-code'),
+    ini: faIcon('fa-solid fa-file-code'),
+    conf: faIcon('fa-solid fa-file-code'),
+    config: faIcon('fa-solid fa-file-code'),
+    properties: faIcon('fa-solid fa-file-code'),
+    env: faIcon('fa-solid fa-sliders'),
+
+    md: faIcon('fa-brands fa-markdown', 'brand'),
+    markdown: faIcon('fa-brands fa-markdown', 'brand'),
+    mdx: faIcon('fa-brands fa-markdown', 'brand'),
+    txt: faIcon('fa-solid fa-file-lines'),
+    log: faIcon('fa-solid fa-file-lines'),
+    rst: faIcon('fa-solid fa-file-lines'),
+    adoc: faIcon('fa-solid fa-file-lines'),
+    pdf: faIcon('fa-solid fa-file-pdf'),
+    doc: faIcon('fa-solid fa-file-word'),
+    docx: faIcon('fa-solid fa-file-word'),
+    odt: faIcon('fa-solid fa-file-word'),
+    rtf: faIcon('fa-solid fa-file-word'),
+    xls: faIcon('fa-solid fa-file-excel'),
+    xlsx: faIcon('fa-solid fa-file-excel'),
+    ods: faIcon('fa-solid fa-file-excel'),
+    csv: faIcon('fa-solid fa-file-excel'),
+    tsv: faIcon('fa-solid fa-file-excel'),
+    ppt: faIcon('fa-solid fa-file-powerpoint'),
+    pptx: faIcon('fa-solid fa-file-powerpoint'),
+    odp: faIcon('fa-solid fa-file-powerpoint'),
+
+    png: faIcon('fa-solid fa-file-image'),
+    jpg: faIcon('fa-solid fa-file-image'),
+    jpeg: faIcon('fa-solid fa-file-image'),
+    gif: faIcon('fa-solid fa-file-image'),
+    webp: faIcon('fa-solid fa-file-image'),
+    svg: faIcon('fa-solid fa-file-image'),
+    ico: faIcon('fa-solid fa-file-image'),
+    bmp: faIcon('fa-solid fa-file-image'),
+    tiff: faIcon('fa-solid fa-file-image'),
+    avif: faIcon('fa-solid fa-file-image'),
+    mp3: faIcon('fa-solid fa-file-audio'),
+    wav: faIcon('fa-solid fa-file-audio'),
+    ogg: faIcon('fa-solid fa-file-audio'),
+    flac: faIcon('fa-solid fa-file-audio'),
+    mp4: faIcon('fa-solid fa-file-video'),
+    mov: faIcon('fa-solid fa-file-video'),
+    webm: faIcon('fa-solid fa-file-video'),
+    avi: faIcon('fa-solid fa-file-video'),
+    zip: faIcon('fa-solid fa-file-zipper'),
+    gz: faIcon('fa-solid fa-file-zipper'),
+    tgz: faIcon('fa-solid fa-file-zipper'),
+    bz2: faIcon('fa-solid fa-file-zipper'),
+    xz: faIcon('fa-solid fa-file-zipper'),
+    '7z': faIcon('fa-solid fa-file-zipper'),
+    rar: faIcon('fa-solid fa-file-zipper'),
+    ttf: faIcon('fa-solid fa-font'),
+    otf: faIcon('fa-solid fa-font'),
+    woff: faIcon('fa-solid fa-font'),
+    woff2: faIcon('fa-solid fa-font'),
+    lock: faIcon('fa-solid fa-lock'),
+  });
+
+  const FILE_ICON_BY_NAME = Object.freeze({
+    dockerfile: faIcon('fa-brands fa-docker', 'brand'),
+    '.dockerignore': faIcon('fa-brands fa-docker', 'brand'),
+    'package.json': faIcon('fa-brands fa-node-js', 'brand'),
+    'package-lock.json': faIcon('fa-brands fa-npm', 'brand'),
+    'pnpm-lock.yaml': faIcon('fa-brands fa-node-js', 'brand'),
+    'yarn.lock': faIcon('fa-brands fa-node-js', 'brand'),
+    'bun.lock': faIcon('fa-brands fa-node-js', 'brand'),
+    'bun.lockb': faIcon('fa-brands fa-node-js', 'brand'),
+    'composer.json': faIcon('fa-brands fa-php', 'brand'),
+    gemfile: faIcon('fa-solid fa-gem'),
+    'gemfile.lock': faIcon('fa-solid fa-gem'),
+    rakefile: faIcon('fa-solid fa-gem'),
+    'go.mod': faIcon('fa-brands fa-golang', 'brand'),
+    'go.sum': faIcon('fa-brands fa-golang', 'brand'),
+    'cargo.toml': faIcon('fa-solid fa-file-code'),
+    'cargo.lock': faIcon('fa-solid fa-lock'),
+    requirements: faIcon('fa-brands fa-python', 'brand'),
+    'requirements.txt': faIcon('fa-brands fa-python', 'brand'),
+    'pyproject.toml': faIcon('fa-brands fa-python', 'brand'),
+    'setup.py': faIcon('fa-brands fa-python', 'brand'),
+
+    '.gitignore': faIcon('fa-brands fa-git-alt', 'brand'),
+    '.gitattributes': faIcon('fa-brands fa-git-alt', 'brand'),
+    '.gitmodules': faIcon('fa-brands fa-git-alt', 'brand'),
+    gitmessage: faIcon('fa-brands fa-git-alt', 'brand'),
+    'readme.md': faIcon('fa-solid fa-file-lines'),
+    readme: faIcon('fa-solid fa-file-lines'),
+    'changelog.md': faIcon('fa-solid fa-file-lines'),
+    changelog: faIcon('fa-solid fa-file-lines'),
+    'agents.md': faIcon('fa-solid fa-file-lines'),
+    'code_of_conduct.md': faIcon('fa-solid fa-file-lines'),
+    'contributing.md': faIcon('fa-solid fa-file-lines'),
+    'security.md': faIcon('fa-solid fa-file-lines'),
+    license: faIcon('fa-solid fa-scale-balanced'),
+    'license.md': faIcon('fa-solid fa-scale-balanced'),
+    notice: faIcon('fa-solid fa-scale-balanced'),
+    makefile: faIcon('fa-solid fa-terminal'),
+    cmakelists: faIcon('fa-solid fa-terminal'),
+    'cmakelists.txt': faIcon('fa-solid fa-terminal'),
+    justfile: faIcon('fa-solid fa-terminal'),
+    procfile: faIcon('fa-solid fa-terminal'),
+    '.env': faIcon('fa-solid fa-sliders'),
+    '.env.example': faIcon('fa-solid fa-sliders'),
+    '.nvmrc': faIcon('fa-brands fa-node-js', 'brand'),
+    '.tool-versions': faIcon('fa-solid fa-sliders'),
+    '.editorconfig': faIcon('fa-solid fa-gears'),
+    '.prettierrc': faIcon('fa-solid fa-gears'),
+    '.eslintrc': faIcon('fa-solid fa-gears'),
+    'biome.json': faIcon('fa-solid fa-gears'),
+    'tsconfig.json': faIcon('fa-solid fa-file-code'),
+    'vite.config.js': faIcon('fa-solid fa-gears'),
+    'vite.config.ts': faIcon('fa-solid fa-gears'),
+  });
+
+  const FOLDER_ICON_BY_NAME = Object.freeze({
+    '.github': faIcon('fa-brands fa-github', 'folder'),
+    '.git': faIcon('fa-brands fa-git-alt', 'folder'),
+    '.vscode': faIcon('fa-solid fa-code', 'folder'),
+    '.agents': faIcon('fa-solid fa-robot', 'folder'),
+    '.claude': faIcon('fa-solid fa-robot', 'folder'),
+    '.cline': faIcon('fa-solid fa-robot', 'folder'),
+    '.codex': faIcon('fa-solid fa-robot', 'folder'),
+    '.changeset': faIcon('fa-solid fa-list-check', 'folder'),
+    '.husky': faIcon('fa-solid fa-terminal', 'folder'),
+    '.greptile': faIcon('fa-solid fa-robot', 'folder'),
+    node_modules: faIcon('fa-brands fa-node-js', 'folder'),
+    docker: faIcon('fa-brands fa-docker', 'folder'),
+    docs: faIcon('fa-solid fa-book', 'folder'),
+    test: faIcon('fa-solid fa-vial', 'folder'),
+    tests: faIcon('fa-solid fa-vial', 'folder'),
+    e2e: faIcon('fa-solid fa-vial', 'folder'),
+    evals: faIcon('fa-solid fa-vial', 'folder'),
+    assets: faIcon('fa-solid fa-images', 'folder'),
+    images: faIcon('fa-solid fa-images', 'folder'),
+    public: faIcon('fa-solid fa-images', 'folder'),
+    src: faIcon('fa-solid fa-cubes', 'folder'),
+    lib: faIcon('fa-solid fa-cubes', 'folder'),
+    apps: faIcon('fa-solid fa-cubes', 'folder'),
+    packages: faIcon('fa-solid fa-cubes', 'folder'),
+    sdk: faIcon('fa-solid fa-cubes', 'folder'),
+    build: faIcon('fa-solid fa-box-archive', 'folder'),
+    dist: faIcon('fa-solid fa-box-archive', 'folder'),
+    target: faIcon('fa-solid fa-box-archive', 'folder'),
+    scripts: faIcon('fa-solid fa-terminal', 'folder'),
+    tools: faIcon('fa-solid fa-screwdriver-wrench', 'folder'),
+    config: faIcon('fa-solid fa-gears', 'folder'),
+    '.config': faIcon('fa-solid fa-gears', 'folder'),
+  });
 
   function getFileNameFromLink(link) {
     try {
       const pathname = new URL(link.href, location.href).pathname;
       return decodeURIComponent(pathname.split('/').filter(Boolean).pop() || '').toLowerCase();
-    } catch (error) {
+    } catch {
       return '';
     }
   }
 
-  function getFileIconName(fileName, isDirectory) {
-    // O tema não possui folder.svg, mas possui um ícone base de pasta.
-    if (isDirectory) return 'folder-base';
-    if (FILE_ICON_BY_NAME[fileName]) return FILE_ICON_BY_NAME[fileName];
+  function getFileIconDefinition(fileName, isDirectory) {
+    if (isDirectory) {
+      return FOLDER_ICON_BY_NAME[fileName] || faIcon('fa-solid fa-folder', 'folder');
+    }
+
+    if (Object.prototype.hasOwnProperty.call(FILE_ICON_BY_NAME, fileName)) {
+      return FILE_ICON_BY_NAME[fileName];
+    }
 
     const extension = fileName.includes('.') ? fileName.split('.').pop() : '';
-    // 'document' é o ícone genérico de arquivo que existe no tema (o antigo
-    // 'file' não existe e produzia itens sem ícone).
-    return FILE_ICON_BY_EXTENSION[extension] || 'document';
+    return FILE_ICON_BY_EXTENSION[extension] || faIcon('fa-solid fa-file');
   }
 
   function createGenericFallbackIcon(isDirectory) {
@@ -510,17 +722,21 @@
     return icon;
   }
 
-  function createFileIconImage(iconName, fallback) {
-    const image = document.createElement('img');
-    image.setAttribute(FILE_ICON_MARKER, '');
-    image.setAttribute('aria-hidden', 'true');
-    image.alt = '';
-    image.dataset.iconName = iconName;
-    image.src = `${FILE_ICON_BASE_URL}/${iconName}.svg`;
-    image.addEventListener('error', () => {
-      if (image.isConnected) image.replaceWith(fallback);
-    }, { once: true });
-    return image;
+  function createFileIcon(definition, fallback) {
+    const wrapper = document.createElement('span');
+    wrapper.setAttribute(FILE_ICON_MARKER, '');
+    wrapper.dataset.iconClass = definition.className;
+    wrapper.dataset.iconKind = definition.kind;
+    wrapper.setAttribute('aria-hidden', 'true');
+
+    const fontIcon = document.createElement('i');
+    fontIcon.className = `github-tools-file-icon-fa ${definition.className}`;
+
+    const fallbackIcon = fallback || createGenericFallbackIcon(definition.kind === 'folder');
+    fallbackIcon.classList.add('github-tools-file-icon-fallback');
+    fallbackIcon.setAttribute(FILE_ICON_FALLBACK_MARKER, '');
+    wrapper.append(fontIcon, fallbackIcon);
+    return wrapper;
   }
 
   function addFileIcons() {
@@ -537,8 +753,8 @@
       const row = link.closest('tr, [role="row"], .Box-row, .js-navigation-item, li') || link.parentElement;
       if (!row) return;
 
-      const managedImage = row.querySelector(`img[${FILE_ICON_MARKER}]`);
-      const fallbackIcon = row.querySelector(`svg[${FILE_ICON_FALLBACK_MARKER}]`);
+      const managedIcon = row.querySelector(`[${FILE_ICON_MARKER}]`);
+      const legacyFallbackIcon = row.querySelector(`svg[${FILE_ICON_FALLBACK_MARKER}]`);
       const nativeIcon = row.querySelector(`svg:not([${FILE_ICON_FALLBACK_MARKER}])`);
 
       const fileName = getFileNameFromLink(link);
@@ -548,38 +764,26 @@
         || nativeIcon?.classList.contains('octicon-file-directory-fill')
         || nativeIcon?.classList.contains('icon-directory');
 
-      const iconName = getFileIconName(fileName, isDirectory);
-      const expectedSource = `${FILE_ICON_BASE_URL}/${iconName}.svg`;
+      const definition = getFileIconDefinition(fileName, isDirectory);
 
-      // Uma imagem da implementação anterior pode ter ficado no DOM durante
-      // a navegação SPA. Reaproveita somente a imagem que corresponde à linha
-      // atual; imagens antigas ou quebradas são substituídas abaixo.
-      if (managedImage
-        && managedImage.src === expectedSource
-        && !(managedImage.complete && managedImage.naturalWidth === 0)) return;
+      if (managedIcon
+        && managedIcon.dataset.iconClass === definition.className
+        && managedIcon.dataset.iconKind === definition.kind) return;
 
-      // Se o fallback já está visível, não recria a imagem a cada ciclo do
-      // MutationObserver enquanto a rede continua indisponível.
-      if (fallbackIcon && !managedImage) return;
+      if (legacyFallbackIcon && !managedIcon) legacyFallbackIcon.remove();
 
       const fallback = nativeIcon?.cloneNode(true) || createGenericFallbackIcon(isDirectory);
-      fallback.setAttribute(FILE_ICON_FALLBACK_MARKER, '');
-      const image = createFileIconImage(iconName, fallback);
+      const icon = createFileIcon(definition, fallback);
 
-      if (managedImage) {
-        managedImage.replaceWith(image);
+      if (managedIcon) {
+        managedIcon.replaceWith(icon);
       } else if (nativeIcon) {
-        nativeIcon.replaceWith(image);
+        nativeIcon.replaceWith(icon);
       } else {
-        // O GitHub pode montar a linha sem o SVG nativo. Nesse caso, insere o
-        // ícone gerenciado junto ao link, sem depender de uma atualização da
-        // página para fazê-lo aparecer.
-        link.prepend(image);
+        link.prepend(icon);
       }
     });
   }
-
-  // ---- Tamanho do repositório ----
 
   function formatRepositorySize(sizeInKB) {
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -600,8 +804,7 @@
 
       const ttl = entry.size === null ? SIZE_RATE_LIMIT_TTL : SIZE_CACHE_TTL;
       if (Date.now() - entry.timestamp < ttl) return entry.size;
-    } catch (error) {
-      // cache corrompido; ignora
+    } catch {
     }
 
     return undefined;
@@ -612,8 +815,7 @@
       const data = JSON.parse(localStorage.getItem(SIZE_CACHE_KEY) || '{}');
       data[key] = { size, timestamp: Date.now() };
       localStorage.setItem(SIZE_CACHE_KEY, JSON.stringify(data));
-    } catch (error) {
-      // armazenamento indisponível; ignora
+    } catch {
     }
   }
 
@@ -651,12 +853,8 @@
 
         if (Number.isFinite(data.size) && data.size >= 0) size = data.size;
 
-        // A API respondeu (tamanho válido, repositório privado, limite de
-        // taxa etc.): persiste para evitar novas requisições em seguida.
         writeSizeCache(key, size);
-      } catch (error) {
-        // Rede indisponível: não persiste, permitindo tentar novamente na
-        // próxima visita sem guardar um resultado errado.
+      } catch {
       }
 
       sizeMemoryCache.set(key, size);
@@ -721,10 +919,6 @@
 
     const cacheKey = `${repository.owner}/${repository.repository}`;
 
-    // Se já sabemos que o tamanho está indisponível (erro ou limite de API),
-    // não recria o rótulo nem refaz a requisição. Depois que o cache em
-    // memória é preenchido, ele é a fonte confiável (evita reler o
-    // localStorage a cada ciclo do MutationObserver).
     if (sizeMemoryCache.has(cacheKey)) {
       if (sizeMemoryCache.get(cacheKey) === null) return;
     } else if (readSizeCache(cacheKey) === null) {
@@ -739,10 +933,8 @@
       return;
     }
 
-    // Já existe um rótulo válido do repositório atual: nada a fazer.
     if (existing && existing.dataset.repoKey === cacheKey && existing.isConnected) return;
 
-    // Rótulo de outro repositório (navegação SPA) ou órfão: remove e recria.
     existing?.remove();
 
     const label = document.createElement('span');
@@ -770,8 +962,6 @@
     label.append(createSizeIcon(), document.createTextNode(text));
     label.title = `Tamanho do repositório: ${text}`;
   }
-
-  // ---- Agendamento das atualizações ----
 
   let scheduled = false;
 
