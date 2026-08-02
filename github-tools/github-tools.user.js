@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-02-04:35
+// @version      2026-08-02-04:41
 // @description  Adiciona customizações ao GitHub.
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
@@ -20,7 +20,6 @@
   const BUTTON_MARKER = 'data-fork-finder-button';
   const CLONE_BUTTON_MARKER = 'data-github-tools-clone-button';
   const FILE_ICON_MARKER = 'data-github-tools-file-icon';
-  const FILE_ICON_FALLBACK_MARKER = 'data-github-tools-file-icon-fallback';
   const SIZE_MARKER = 'data-repo-size-label';
   const SIZE_CACHE_KEY = 'github-tools:repo-size-cache:v2';
   const SIZE_CACHE_TTL = 24 * 60 * 60 * 1000;
@@ -666,55 +665,100 @@
     return FILE_ICON_BY_EXTENSION[extension] || faIcon('fa-solid fa-file');
   }
 
-  function createGenericFallbackIcon(isDirectory) {
-    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    icon.setAttribute('aria-hidden', 'true');
-    icon.setAttribute('focusable', 'false');
-    icon.setAttribute('viewBox', '0 0 16 16');
-    icon.setAttribute('width', '16');
-    icon.setAttribute('height', '16');
-    icon.setAttribute('fill', 'currentColor');
-    icon.classList.add('octicon', isDirectory ? 'octicon-file-directory-fill' : 'octicon-file');
-    icon.setAttribute(FILE_ICON_FALLBACK_MARKER, '');
+  function getIconPresentation(definition, fileName) {
+    const value = `${fileName} ${definition.className}`.toLowerCase();
+    if (definition.kind === 'folder') {
+      const folderColors = {
+        '.github': '#24292f',
+        '.vscode': '#007acc',
+        docs: '#3b82f6',
+        src: '#8b5cf6',
+        lib: '#8b5cf6',
+        tests: '#22c55e',
+        test: '#22c55e',
+        assets: '#f59e0b',
+        images: '#f59e0b',
+        scripts: '#64748b',
+        node_modules: '#83cd29',
+      };
+      return { color: folderColors[fileName] || '#3b82f6', label: '', foreground: '#ffffff' };
+    }
 
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', isDirectory
-      ? 'M1.75 1.5h4.5c.464 0 .91.184 1.237.513L8.5 3h5.75A1.75 1.75 0 0 1 16 4.75v7.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25v-9A1.75 1.75 0 0 1 1.75 1.5Zm0 1.5a.25.25 0 0 0-.25.25v9c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25H8.19a.75.75 0 0 1-.53-.22L7.19 3.5a.75.75 0 0 0-.53-.22Z'
-      : 'M3 1.5h6.75L13 4.75v9.5a.25.25 0 0 1-.25.25h-9.5a.25.25 0 0 1-.25-.25v-12.5a.25.25 0 0 1 .25-.25Zm6 1.5H4.5V13h7V5h-2.5V3Z');
-    icon.appendChild(path);
-    return icon;
+    const presentations = [
+      [/git-alt|\.git/, '#f05032', 'git', '#ffffff'],
+      [/docker/, '#2496ed', 'docker', '#ffffff'],
+      [/npm/, '#cb3837', 'npm', '#ffffff'],
+      [/node-js|\.nvmrc|package/, '#83cd29', 'node', '#17351b'],
+      [/python|\.py$|pyproject/, '#3776ab', 'py', '#ffffff'],
+      [/react|\.jsx$|\.tsx$/, '#61dafb', '⚛', '#123047'],
+      [/fa-js|\.m?js$|\.cjs$/, '#f7df1e', 'JS', '#202124'],
+      [/html5|\.x?html$/, '#e44d26', 'HTML', '#ffffff'],
+      [/css3|\.s?css$|\.less$|\.styl$/, '#1572b6', 'CSS', '#ffffff'],
+      [/vuejs|\.vue$/, '#42b883', 'VUE', '#ffffff'],
+      [/markdown|\.mdx?$|readme|changelog/, '#2563eb', 'MD', '#ffffff'],
+      [/file-pdf|\.pdf$/, '#ef4444', 'PDF', '#ffffff'],
+      [/file-word|\.docx?$|\.odt$|\.rtf$/, '#2563eb', 'W', '#ffffff'],
+      [/file-excel|\.xlsx?$|\.ods$|\.csv$|\.tsv$/, '#16a34a', 'X', '#ffffff'],
+      [/file-powerpoint|\.pptx?$|\.odp$/, '#f97316', 'P', '#ffffff'],
+      [/file-image|\.(png|jpe?g|gif|webp|svg|ico|bmp|tiff|avif)$/, '#a855f7', 'IMG', '#ffffff'],
+      [/file-audio|\.(mp3|wav|ogg|flac)$/, '#ec4899', '♪', '#ffffff'],
+      [/file-video|\.(mp4|mov|webm|avi)$/, '#dc2626', '▶', '#ffffff'],
+      [/file-zipper|\.(zip|gz|tgz|bz2|xz|7z|rar)$/, '#d97706', 'ZIP', '#ffffff'],
+      [/database|\.sql$|\.graphql$|\.gql$/, '#eab308', 'DB', '#422006'],
+      [/terminal|\.sh$|\.bash$|\.zsh$|\.fish$|\.ps1$|\.bat$|\.cmd$|makefile|procfile/, '#334155', '>_', '#ffffff'],
+      [/font|\.(ttf|otf|woff2?)$/, '#7c3aed', 'A', '#ffffff'],
+      [/lock|\.lock$/, '#64748b', 'L', '#ffffff'],
+      [/sliders|gears|\.tool-versions|\.editorconfig|biome|vite\.config/, '#64748b', 'CFG', '#ffffff'],
+      [/scale-balanced|license|notice/, '#8b5cf6', '§', '#ffffff'],
+      [/file-code|\.json$|\.ya?ml$|\.toml$|\.xml$|\.ini$|\.conf$|\.config$|\.env$|\.rs$|\.go$|\.java$|\.php$|\.swift$|\.rb$/, '#0f766e', '</>', '#ffffff'],
+      [/file-lines|\.txt$|\.log$|\.rst$|\.adoc$/, '#64748b', 'TXT', '#ffffff'],
+    ];
+
+    const match = presentations.find(([pattern]) => pattern.test(value));
+    if (match) return { color: match[1], label: match[2], foreground: match[3] };
+    return { color: '#475569', label: 'FILE', foreground: '#ffffff' };
   }
 
-  function getInlineIconType(definition) {
-    const className = definition.className;
-    if (definition.kind === 'folder') return 'folder';
-    if (/terminal|screwdriver|gears|sliders/.test(className)) return 'terminal';
-    if (/code|js|react|html|css|vue|python|golang|java|php|swift|docker|node|npm|git|github/.test(className)) return 'code';
-    return 'file';
-  }
-
-  function createInlineIcon(definition) {
-    const [viewBox, pathData] = INLINE_ICON_PATHS[getInlineIconType(definition)];
+  function createInlineIcon(definition, fileName) {
+    const type = definition.kind === 'folder' ? 'folder' : 'file';
+    const [viewBox, pathData] = INLINE_ICON_PATHS[type];
+    const presentation = getIconPresentation(definition, fileName);
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     icon.setAttribute('viewBox', viewBox);
     icon.setAttribute('aria-hidden', 'true');
     icon.setAttribute('focusable', 'false');
     icon.classList.add('github-tools-file-icon-svg');
+    icon.style.color = presentation.color;
 
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', pathData);
     icon.appendChild(path);
+
+    if (presentation.label) {
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', type === 'folder' ? '256' : '192');
+      label.setAttribute('y', type === 'folder' ? '350' : '384');
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
+      label.setAttribute('font-size', presentation.label.length > 3 ? '62' : '86');
+      label.setAttribute('font-weight', '800');
+      label.setAttribute('letter-spacing', '-3');
+      label.setAttribute('fill', presentation.foreground);
+      label.textContent = presentation.label;
+      icon.appendChild(label);
+    }
+
     return icon;
   }
 
-  function createFileIcon(definition) {
+  function createFileIcon(definition, fileName) {
     const wrapper = document.createElement('span');
     wrapper.setAttribute(FILE_ICON_MARKER, '');
     wrapper.dataset.iconClass = definition.className;
     wrapper.dataset.iconKind = definition.kind;
     wrapper.setAttribute('aria-hidden', 'true');
 
-    wrapper.append(createInlineIcon(definition));
+    wrapper.append(createInlineIcon(definition, fileName));
     return wrapper;
   }
 
@@ -735,7 +779,6 @@
 
       const nameCell = link.closest('td, [role="gridcell"], [role="cell"]') || link.parentElement;
       const managedIcon = nameCell.querySelector(`[${FILE_ICON_MARKER}]`);
-      const legacyFallbackIcon = nameCell.querySelector(`svg[${FILE_ICON_FALLBACK_MARKER}]`);
       const nativeIcon = nameCell.querySelector('svg.octicon-file, svg.octicon-file-directory-fill, svg[class*="icon-directory"]');
 
       const fileName = getFileNameFromLink(link);
@@ -751,9 +794,7 @@
         && managedIcon.dataset.iconClass === definition.className
         && managedIcon.dataset.iconKind === definition.kind) return;
 
-      if (legacyFallbackIcon && !managedIcon) legacyFallbackIcon.remove();
-
-      const icon = createFileIcon(definition);
+      const icon = createFileIcon(definition, fileName);
 
       if (managedIcon) {
         managedIcon.replaceWith(icon);
