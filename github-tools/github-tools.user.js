@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-02-05:14
+// @version      2026-08-02-15:55
 // @description  Adiciona customizações ao GitHub.
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
@@ -81,24 +81,24 @@
     `}`,
     `img[${FILE_ICON_MARKER}] {`,
     `  display: inline-block !important;`,
-    `  width: 24px !important;`,
-    `  height: 24px !important;`,
-    `  margin: 0 -4px !important;`,
-    `  object-fit: scale-down;`,
+    `  width: 18px !important;`,
+    `  height: 18px !important;`,
+    `  margin: 0 4px 0 0 !important;`,
+    `  object-fit: fill;`,
     `  vertical-align: middle;`,
     `  flex: 0 0 auto;`,
     `}`,
     `span[${FILE_ICON_MARKER}] {`,
     `  display: inline-flex;`,
-    `  width: 16px;`,
-    `  height: 16px;`,
+    `  width: 18px;`,
+    `  height: 18px;`,
     `  margin: 0 4px 0 0;`,
     `  vertical-align: text-bottom;`,
     `}`,
     `span[${FILE_ICON_MARKER}] .github-tools-file-icon-svg {`,
     `  display: block;`,
-    `  width: 16px;`,
-    `  height: 16px;`,
+    `  width: 18px;`,
+    `  height: 18px;`,
     `  fill: currentColor;`,
     `}`,
   ].join('\n');
