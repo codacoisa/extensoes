@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-02-04:08
+// @version      2026-08-02-04:35
 // @description  Adiciona customizações ao GitHub.
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
@@ -10,8 +10,8 @@
 // @icon         https://github.githubassets.com/favicons/favicon.svg
 // @grant        none
 // @run-at       document-idle
-// @downloadURL  https://raw.githubusercontent.com/codacoisa/extensoes/main/github-tools/github-tools.user.js
-// @updateURL    https://raw.githubusercontent.com/codacoisa/extensoes/main/github-tools/github-tools.user.js
+// @downloadURL  https://github.com/codacoisa/extensoes/raw/refs/heads/main/github-tools/github-tools.user.js
+// @updateURL    https://github.com/codacoisa/extensoes/raw/refs/heads/main/github-tools/github-tools.user.js
 // ==/UserScript==
 
 (function () {
@@ -21,38 +21,14 @@
   const CLONE_BUTTON_MARKER = 'data-github-tools-clone-button';
   const FILE_ICON_MARKER = 'data-github-tools-file-icon';
   const FILE_ICON_FALLBACK_MARKER = 'data-github-tools-file-icon-fallback';
-  const FONT_AWESOME_LINK_MARKER = 'data-github-tools-fontawesome';
-  const FONT_AWESOME_READY_MARKER = 'data-github-tools-fontawesome-ready';
   const SIZE_MARKER = 'data-repo-size-label';
   const SIZE_CACHE_KEY = 'github-tools:repo-size-cache:v2';
   const SIZE_CACHE_TTL = 24 * 60 * 60 * 1000;
   const SIZE_RATE_LIMIT_TTL = 60 * 60 * 1000;
   const FORK_FINDER_URL = 'https://forkfinder.getinfotoyou.com/repo';
-  const FONT_AWESOME_CSS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css';
 
   const DATABASE_ICON =
     'M1 3.5c0-.626.292-1.165.7-1.59.406-.422.956-.767 1.579-1.041C4.525.32 6.195 0 8 0c1.805 0 3.475.32 4.722.869.622.274 1.172.62 1.578 1.04.408.426.7.965.7 1.591v9c0 .626-.292 1.165-.7 1.59-.406.422-.956.767-1.579 1.041C11.476 15.68 9.806 16 8 16c-1.805 0-3.475-.32-4.721-.869-.623-.274-1.173-.62-1.579-1.04C1.292 13.665 1 13.126 1 12.5v-9Zm1.5 0c0 .133.058.318.282.551.227.237.591.483 1.101.707C4.898 5.205 6.353 5.5 8 5.5c1.646 0 3.101-.295 4.118-.742.508-.224.873-.471 1.1-.708.224-.232.282-.417.282-.55 0-.133-.058-.318-.282-.551-.227-.237-.591-.483-1.101-.707C11.102 1.795 9.647 1.5 8 1.5c-1.646 0-3.101.295-4.118.742-.508.224-.873.471-1.1.708-.224.232-.282.417-.282.55Zm0 4.5c0 .133.058.318.282.551.227.237.591.483 1.101.707C4.898 9.705 6.353 10 8 10c1.646 0 3.101-.295 4.118-.742.508-.224.873-.471 1.1-.708.224-.232.282-.417.282-.55V5.724c-.241.15-.503.286-.778.407C11.475 6.68 9.805 7 8 7c-1.805 0-3.475-.32-4.721-.869a6.15 6.15 0 0 1-.779-.407v2.276Zm0 2.225V12.5c0 .133.058.318.282.55.227.233.592.484 1.1.708 1.016.447 2.471.742 4.118.742 1.647 0 3.102-.295 4.117-.742.51-.224.874-.475 1.101-.707.224-.233.282-.418.282-.551v-2.275c-.241.15-.503.285-.778.406C11.475 11.18 9.805 11.5 8 11.5c-1.805 0-3.475-.32-4.721-.869a6.327 6.327 0 0 1-.779-.406Z';
-
-  function loadFontAwesome() {
-    const existingLink = document.querySelector(`link[${FONT_AWESOME_LINK_MARKER}]`);
-    if (existingLink) return;
-
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = FONT_AWESOME_CSS_URL;
-    link.crossOrigin = 'anonymous';
-    link.referrerPolicy = 'no-referrer';
-    link.setAttribute(FONT_AWESOME_LINK_MARKER, '');
-    link.addEventListener('load', () => {
-      document.documentElement.setAttribute(FONT_AWESOME_READY_MARKER, '');
-    }, { once: true });
-    link.addEventListener('error', () => {
-      document.documentElement.removeAttribute(FONT_AWESOME_READY_MARKER);
-    }, { once: true });
-    document.head.appendChild(link);
-  }
-
-  loadFontAwesome();
 
   const style = document.createElement('style');
   style.textContent = [
@@ -112,21 +88,11 @@
     `span[${FILE_ICON_MARKER}][data-icon-kind="folder"] {`,
     `  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));`,
     `}`,
-    `span[${FILE_ICON_MARKER}] .github-tools-file-icon-fa {`,
-    `  display: none;`,
-    `  font-size: 14px;`,
-    `  line-height: 1;`,
-    `}`,
-    `span[${FILE_ICON_MARKER}] .github-tools-file-icon-fallback {`,
-    `  display: inline-block;`,
+    `span[${FILE_ICON_MARKER}] .github-tools-file-icon-svg {`,
+    `  display: block;`,
     `  width: 16px;`,
     `  height: 16px;`,
-    `}`,
-    `html[${FONT_AWESOME_READY_MARKER}] span[${FILE_ICON_MARKER}] .github-tools-file-icon-fa {`,
-    `  display: inline-block;`,
-    `}`,
-    `html[${FONT_AWESOME_READY_MARKER}] span[${FILE_ICON_MARKER}] .github-tools-file-icon-fallback {`,
-    `  display: none;`,
+    `  fill: currentColor;`,
     `}`,
     `img[${FILE_ICON_MARKER}] {`,
     `  display: none !important;`,
@@ -450,6 +416,13 @@
 
   const faIcon = (className, kind = 'file') => Object.freeze({ className, kind });
 
+  const INLINE_ICON_PATHS = Object.freeze({
+    folder: ['0 0 512 512', 'M64 480H448c35.3 0 64-28.7 64-64V160c0-35.3-28.7-64-64-64H288c-10.1 0-19.6-4.7-25.6-12.8L243.2 57.6C231.1 41.5 212.1 32 192 32H64C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64z'],
+    code: ['0 0 640 512', 'M392.8 1.2c-17-4.9-34.7 5-39.6 22l-128 448c-4.9 17 5 34.7 22 39.6s34.7-5 39.6-22l128-448c4.9-17 5-34.7-22-39.6zm80.6 120.1c-12.5 12.5-12.5 32.8 0 45.3L562.7 256l-89.4 89.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l112-112c12.5-12.5 12.5-32.8 0-45.3l-112-112c-12.5-12.5-32.8-12.5-45.3 0zm-306.7 0c-12.5-12.5-32.8-12.5-45.3 0l-112 112c-12.5 12.5-12.5 32.8 0 45.3l112 112c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L77.3 256l89.4-89.4c12.5-12.5 12.5-32.8 0-45.3z'],
+    terminal: ['0 0 576 512', 'M9.4 86.6C-3.1 74.1-3.1 53.9 9.4 41.4s32.8-12.5 45.3 0l192 192c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L178.7 256 9.4 86.6zM256 416l288 0c17.7 0 32 14.3 32 32s-14.3 32-32 32l-288 0c-17.7 0-32-14.3-32-32s14.3-32 32-32z'],
+    file: ['0 0 384 512', 'M0 64C0 28.7 28.7 0 64 0L224 0l0 128c0 17.7 14.3 32 32 32l128 0 0 288c0 35.3-28.7 64-64 64L64 512c-35.3 0-64-28.7-64-64L0 64zm384 64l-128 0L256 0 384 128z'],
+  });
+
   const FILE_ICON_BY_EXTENSION = Object.freeze({
     js: faIcon('fa-brands fa-js', 'brand'),
     jsx: faIcon('fa-brands fa-react', 'brand'),
@@ -712,40 +685,58 @@
     return icon;
   }
 
-  function createFileIcon(definition, fallback) {
+  function getInlineIconType(definition) {
+    const className = definition.className;
+    if (definition.kind === 'folder') return 'folder';
+    if (/terminal|screwdriver|gears|sliders/.test(className)) return 'terminal';
+    if (/code|js|react|html|css|vue|python|golang|java|php|swift|docker|node|npm|git|github/.test(className)) return 'code';
+    return 'file';
+  }
+
+  function createInlineIcon(definition) {
+    const [viewBox, pathData] = INLINE_ICON_PATHS[getInlineIconType(definition)];
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('viewBox', viewBox);
+    icon.setAttribute('aria-hidden', 'true');
+    icon.setAttribute('focusable', 'false');
+    icon.classList.add('github-tools-file-icon-svg');
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', pathData);
+    icon.appendChild(path);
+    return icon;
+  }
+
+  function createFileIcon(definition) {
     const wrapper = document.createElement('span');
     wrapper.setAttribute(FILE_ICON_MARKER, '');
     wrapper.dataset.iconClass = definition.className;
     wrapper.dataset.iconKind = definition.kind;
     wrapper.setAttribute('aria-hidden', 'true');
 
-    const fontIcon = document.createElement('i');
-    fontIcon.className = `github-tools-file-icon-fa ${definition.className}`;
-
-    const fallbackIcon = fallback || createGenericFallbackIcon(definition.kind === 'folder');
-    fallbackIcon.classList.add('github-tools-file-icon-fallback');
-    fallbackIcon.setAttribute(FILE_ICON_FALLBACK_MARKER, '');
-    wrapper.append(fontIcon, fallbackIcon);
+    wrapper.append(createInlineIcon(definition));
     return wrapper;
   }
 
   function addFileIcons() {
-    const entries = document.querySelectorAll([
-      '.react-directory-truncate[href]',
-      '.react-directory-truncate a[href]',
-      '.js-navigation-open[href]',
-    ].join(','));
+    const repository = getRepository();
+    if (!repository) return;
+
+    const entryPrefix = `/${repository.owner}/${repository.repository}/`;
+    const entries = [...document.querySelectorAll('a[href]')].filter((link) => (
+      link.pathname.toLowerCase().startsWith(entryPrefix)
+      && /\/(?:blob|tree)\//i.test(link.pathname)
+    ));
 
     entries.forEach((entry) => {
-      const link = entry.matches('a[href]') ? entry : entry.querySelector('a[href]');
-      if (!link) return;
-
-      const row = link.closest('tr, [role="row"], .Box-row, .js-navigation-item, li') || link.parentElement;
+      const link = entry;
+      const row = link.closest('tr, [role="row"], .Box-row, .js-navigation-item, li');
       if (!row) return;
 
-      const managedIcon = row.querySelector(`[${FILE_ICON_MARKER}]`);
-      const legacyFallbackIcon = row.querySelector(`svg[${FILE_ICON_FALLBACK_MARKER}]`);
-      const nativeIcon = row.querySelector(`svg:not([${FILE_ICON_FALLBACK_MARKER}])`);
+      const nameCell = link.closest('td, [role="gridcell"], [role="cell"]') || link.parentElement;
+      const managedIcon = nameCell.querySelector(`[${FILE_ICON_MARKER}]`);
+      const legacyFallbackIcon = nameCell.querySelector(`svg[${FILE_ICON_FALLBACK_MARKER}]`);
+      const nativeIcon = nameCell.querySelector('svg.octicon-file, svg.octicon-file-directory-fill, svg[class*="icon-directory"]');
 
       const fileName = getFileNameFromLink(link);
       if (!fileName) return;
@@ -762,15 +753,14 @@
 
       if (legacyFallbackIcon && !managedIcon) legacyFallbackIcon.remove();
 
-      const fallback = nativeIcon?.cloneNode(true) || createGenericFallbackIcon(isDirectory);
-      const icon = createFileIcon(definition, fallback);
+      const icon = createFileIcon(definition);
 
       if (managedIcon) {
         managedIcon.replaceWith(icon);
       } else if (nativeIcon) {
         nativeIcon.replaceWith(icon);
       } else {
-        link.prepend(icon);
+        link.before(icon);
       }
     });
   }
