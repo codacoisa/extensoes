@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-02-16:20
+// @version      2026-08-04-18:00
 // @description  Adiciona customizações ao GitHub.
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
@@ -14,8 +14,196 @@
 // @updateURL    https://github.com/codacoisa/extensoes/raw/refs/heads/main/github-tools/github-tools.user.js
 // ==/UserScript==
 
+const GITHUB_TOOLS_ICON_COLORS = Object.freeze({
+  neutral: 'var(--fgColor-muted, #57606a)',
+  accent: 'var(--fgColor-accent, #0969da)',
+  attention: 'var(--fgColor-attention, #9a6700)',
+  danger: 'var(--fgColor-danger, #cf222e)',
+  done: 'var(--fgColor-done, #8250df)',
+  success: 'var(--fgColor-success, #1a7f37)',
+  open: 'var(--fgColor-open, #1f883d)',
+});
+
+const GITHUB_TOOLS_FOLDER_ICONS = Object.freeze({
+  '.github': ['folder-github', GITHUB_TOOLS_ICON_COLORS.accent],
+  '.git': ['folder-git', GITHUB_TOOLS_ICON_COLORS.danger],
+  '.vscode': ['folder-vscode', GITHUB_TOOLS_ICON_COLORS.accent],
+  docs: ['folder-docs', GITHUB_TOOLS_ICON_COLORS.accent],
+  test: ['folder-test', GITHUB_TOOLS_ICON_COLORS.success],
+  tests: ['folder-test', GITHUB_TOOLS_ICON_COLORS.success],
+  e2e: ['folder-test', GITHUB_TOOLS_ICON_COLORS.success],
+  assets: ['folder-images', GITHUB_TOOLS_ICON_COLORS.attention],
+  images: ['folder-images', GITHUB_TOOLS_ICON_COLORS.attention],
+  public: ['folder-public', GITHUB_TOOLS_ICON_COLORS.attention],
+  src: ['folder-src', GITHUB_TOOLS_ICON_COLORS.done],
+  lib: ['folder-src', GITHUB_TOOLS_ICON_COLORS.done],
+  packages: ['folder-packages', GITHUB_TOOLS_ICON_COLORS.done],
+  scripts: ['folder-scripts', GITHUB_TOOLS_ICON_COLORS.neutral],
+  tools: ['folder-tools', GITHUB_TOOLS_ICON_COLORS.neutral],
+  config: ['folder-config', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.config': ['folder-config', GITHUB_TOOLS_ICON_COLORS.neutral],
+});
+
+const GITHUB_TOOLS_SPECIAL_FILE_ICONS = Object.freeze({
+  'package.json': ['npm/package', GITHUB_TOOLS_ICON_COLORS.danger],
+  'package-lock.json': ['npm/lock', GITHUB_TOOLS_ICON_COLORS.danger],
+  'pnpm-lock.yaml': ['pnpm', GITHUB_TOOLS_ICON_COLORS.accent],
+  'yarn.lock': ['yarn', GITHUB_TOOLS_ICON_COLORS.accent],
+  'dockerfile': ['docker', GITHUB_TOOLS_ICON_COLORS.accent],
+  '.dockerignore': ['docker', GITHUB_TOOLS_ICON_COLORS.accent],
+  'readme': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'readme.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'changelog': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'changelog.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'agents.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'contributing.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'security.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'code_of_conduct.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  license: ['license', GITHUB_TOOLS_ICON_COLORS.done],
+  'license.md': ['license', GITHUB_TOOLS_ICON_COLORS.done],
+  notice: ['license', GITHUB_TOOLS_ICON_COLORS.done],
+  '.env': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.env.example': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.editorconfig': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.gitignore': ['git', GITHUB_TOOLS_ICON_COLORS.danger],
+  '.gitattributes': ['git', GITHUB_TOOLS_ICON_COLORS.danger],
+  '.gitmodules': ['git', GITHUB_TOOLS_ICON_COLORS.danger],
+});
+
+const GITHUB_TOOLS_EXTENSION_ICONS = Object.freeze({
+  js: ['javascript', GITHUB_TOOLS_ICON_COLORS.attention],
+  jsx: ['react', GITHUB_TOOLS_ICON_COLORS.accent],
+  mjs: ['javascript', GITHUB_TOOLS_ICON_COLORS.attention],
+  cjs: ['javascript', GITHUB_TOOLS_ICON_COLORS.attention],
+  ts: ['typescript', GITHUB_TOOLS_ICON_COLORS.accent],
+  tsx: ['react', GITHUB_TOOLS_ICON_COLORS.accent],
+  json: ['json', GITHUB_TOOLS_ICON_COLORS.attention],
+  json5: ['json', GITHUB_TOOLS_ICON_COLORS.attention],
+  jsonc: ['json', GITHUB_TOOLS_ICON_COLORS.attention],
+  html: ['html', GITHUB_TOOLS_ICON_COLORS.danger],
+  htm: ['html', GITHUB_TOOLS_ICON_COLORS.danger],
+  xhtml: ['html', GITHUB_TOOLS_ICON_COLORS.danger],
+  css: ['css', GITHUB_TOOLS_ICON_COLORS.accent],
+  scss: ['css', GITHUB_TOOLS_ICON_COLORS.accent],
+  sass: ['css', GITHUB_TOOLS_ICON_COLORS.accent],
+  less: ['css', GITHUB_TOOLS_ICON_COLORS.accent],
+  vue: ['vue', GITHUB_TOOLS_ICON_COLORS.open],
+  svelte: ['svelte', GITHUB_TOOLS_ICON_COLORS.danger],
+  astro: ['astro', GITHUB_TOOLS_ICON_COLORS.danger],
+  py: ['python', GITHUB_TOOLS_ICON_COLORS.accent],
+  pyw: ['python', GITHUB_TOOLS_ICON_COLORS.accent],
+  rb: ['ruby', GITHUB_TOOLS_ICON_COLORS.danger],
+  go: ['go', GITHUB_TOOLS_ICON_COLORS.accent],
+  rs: ['rust', GITHUB_TOOLS_ICON_COLORS.attention],
+  java: ['java', GITHUB_TOOLS_ICON_COLORS.danger],
+  kt: ['kotlin', GITHUB_TOOLS_ICON_COLORS.done],
+  kts: ['kotlin', GITHUB_TOOLS_ICON_COLORS.done],
+  php: ['php', GITHUB_TOOLS_ICON_COLORS.accent],
+  c: ['c', GITHUB_TOOLS_ICON_COLORS.neutral],
+  h: ['c', GITHUB_TOOLS_ICON_COLORS.neutral],
+  cc: ['cpp', GITHUB_TOOLS_ICON_COLORS.accent],
+  cpp: ['cpp', GITHUB_TOOLS_ICON_COLORS.accent],
+  cxx: ['cpp', GITHUB_TOOLS_ICON_COLORS.accent],
+  hpp: ['cpp', GITHUB_TOOLS_ICON_COLORS.accent],
+  swift: ['swift', GITHUB_TOOLS_ICON_COLORS.danger],
+  sql: ['database', GITHUB_TOOLS_ICON_COLORS.attention],
+  graphql: ['graphql', GITHUB_TOOLS_ICON_COLORS.done],
+  gql: ['graphql', GITHUB_TOOLS_ICON_COLORS.done],
+  sh: ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  bash: ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  zsh: ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  fish: ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  ps1: ['terminal', GITHUB_TOOLS_ICON_COLORS.accent],
+  bat: ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  cmd: ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  yml: ['yaml', GITHUB_TOOLS_ICON_COLORS.danger],
+  yaml: ['yaml', GITHUB_TOOLS_ICON_COLORS.danger],
+  toml: ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  xml: ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  ini: ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  conf: ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  config: ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  env: ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  md: ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  markdown: ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  mdx: ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  txt: ['document', GITHUB_TOOLS_ICON_COLORS.neutral],
+  log: ['document', GITHUB_TOOLS_ICON_COLORS.neutral],
+  rst: ['document', GITHUB_TOOLS_ICON_COLORS.neutral],
+  pdf: ['pdf', GITHUB_TOOLS_ICON_COLORS.danger],
+  doc: ['document', GITHUB_TOOLS_ICON_COLORS.accent],
+  docx: ['document', GITHUB_TOOLS_ICON_COLORS.accent],
+  xls: ['table', GITHUB_TOOLS_ICON_COLORS.success],
+  xlsx: ['table', GITHUB_TOOLS_ICON_COLORS.success],
+  ods: ['table', GITHUB_TOOLS_ICON_COLORS.success],
+  csv: ['table', GITHUB_TOOLS_ICON_COLORS.success],
+  tsv: ['table', GITHUB_TOOLS_ICON_COLORS.success],
+  ppt: ['presentation', GITHUB_TOOLS_ICON_COLORS.attention],
+  pptx: ['presentation', GITHUB_TOOLS_ICON_COLORS.attention],
+  odp: ['presentation', GITHUB_TOOLS_ICON_COLORS.attention],
+  png: ['image', GITHUB_TOOLS_ICON_COLORS.done],
+  jpg: ['image', GITHUB_TOOLS_ICON_COLORS.done],
+  jpeg: ['image', GITHUB_TOOLS_ICON_COLORS.done],
+  gif: ['image', GITHUB_TOOLS_ICON_COLORS.done],
+  webp: ['image', GITHUB_TOOLS_ICON_COLORS.done],
+  svg: ['image', GITHUB_TOOLS_ICON_COLORS.done],
+  mp3: ['audio', GITHUB_TOOLS_ICON_COLORS.done],
+  wav: ['audio', GITHUB_TOOLS_ICON_COLORS.done],
+  mp4: ['video', GITHUB_TOOLS_ICON_COLORS.done],
+  mov: ['video', GITHUB_TOOLS_ICON_COLORS.done],
+  zip: ['archive', GITHUB_TOOLS_ICON_COLORS.attention],
+  gz: ['archive', GITHUB_TOOLS_ICON_COLORS.attention],
+  tar: ['archive', GITHUB_TOOLS_ICON_COLORS.attention],
+  ttf: ['font', GITHUB_TOOLS_ICON_COLORS.done],
+  otf: ['font', GITHUB_TOOLS_ICON_COLORS.done],
+  woff: ['font', GITHUB_TOOLS_ICON_COLORS.done],
+  woff2: ['font', GITHUB_TOOLS_ICON_COLORS.done],
+  lock: ['lock', GITHUB_TOOLS_ICON_COLORS.neutral],
+});
+
+function normalizeGithubToolsEntryName(value) {
+  return String(value || '').trim().replace(/\\/g, '/').split('/').pop().toLowerCase();
+}
+
+function resolveGithubToolsIcon(fileName, isDirectory = false) {
+  const name = normalizeGithubToolsEntryName(fileName);
+
+  if (isDirectory) {
+    const folder = GITHUB_TOOLS_FOLDER_ICONS[name];
+    return Object.freeze({
+      iconKey: folder?.[0] || 'folder',
+      color: folder?.[1] || GITHUB_TOOLS_ICON_COLORS.neutral,
+    });
+  }
+
+  const special = GITHUB_TOOLS_SPECIAL_FILE_ICONS[name];
+  if (special) return Object.freeze({ iconKey: special[0], color: special[1] });
+  if (/^\.git/.test(name)) return Object.freeze({ iconKey: 'git', color: GITHUB_TOOLS_ICON_COLORS.danger });
+  if (/^\.env(?:\.|$)/.test(name) || /(?:^|[.-])config(?:[.-]|$)/.test(name)) {
+    return Object.freeze({ iconKey: 'settings', color: GITHUB_TOOLS_ICON_COLORS.neutral });
+  }
+  if (/^(?:readme|changelog|agents|contributing|security)(?:\.|$)/.test(name)) {
+    return Object.freeze({ iconKey: 'markdown', color: GITHUB_TOOLS_ICON_COLORS.accent });
+  }
+  if (/^(?:license|notice)(?:\.|$)/.test(name)) {
+    return Object.freeze({ iconKey: 'license', color: GITHUB_TOOLS_ICON_COLORS.done });
+  }
+
+  const extension = name.includes('.') ? name.split('.').pop() : '';
+  const typed = GITHUB_TOOLS_EXTENSION_ICONS[extension];
+  return Object.freeze({
+    iconKey: typed?.[0] || 'file',
+    color: typed?.[1] || GITHUB_TOOLS_ICON_COLORS.neutral,
+  });
+}
+
+if (typeof module === 'object' && module.exports) {
+  module.exports = { resolveGithubToolsIcon };
+}
+
 (function () {
   'use strict';
+  if (typeof document === 'undefined') return;
 
   const BUTTON_MARKER = 'data-fork-finder-button';
   const CLONE_BUTTON_MARKER = 'data-github-tools-clone-button';
@@ -79,26 +267,20 @@
     `a[${FILE_TYPE_MARKER}="${':folder'}"] {`,
     `  font-weight: 700;`,
     `}`,
-    `img[${FILE_ICON_MARKER}] {`,
-    `  display: inline-block !important;`,
-    `  width: 18px !important;`,
-    `  height: 18px !important;`,
-    `  margin: 0 4px 0 0 !important;`,
-    `  object-fit: fill;`,
-    `  vertical-align: middle;`,
-    `  flex: 0 0 auto;`,
-    `}`,
     `span[${FILE_ICON_MARKER}] {`,
     `  display: inline-flex;`,
-    `  width: 18px;`,
-    `  height: 18px;`,
+    `  width: 16px;`,
+    `  height: 16px;`,
     `  margin: 0 4px 0 0;`,
     `  vertical-align: text-bottom;`,
+    `  flex: 0 0 auto;`,
     `}`,
     `span[${FILE_ICON_MARKER}] .github-tools-file-icon-svg {`,
     `  display: block;`,
-    `  width: 18px;`,
-    `  height: 18px;`,
+    `  width: 16px;`,
+    `  height: 16px;`,
+    `  min-width: 16px;`,
+    `  min-height: 16px;`,
     `  fill: currentColor;`,
     `}`,
   ].join('\n');
@@ -308,9 +490,16 @@
       'M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5c.138 0 .25-.112.25-.25v-7.5a.25.25 0 0 0-.25-.25Z',
     ];
 
-    paths.forEach((pathData) => {
+    paths.forEach((pathData, index) => {
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', pathData);
+      if (paths === CODE_PATH && index > 0) {
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', 'currentColor');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
+        path.setAttribute('stroke-width', '1.25');
+      }
       icon.appendChild(path);
     });
 
@@ -417,612 +606,145 @@
     codeButton.after(copyButton);
   }
 
-  const faIcon = (className, kind = 'file') => Object.freeze({ className, kind });
-
-  const INLINE_ICON_PATHS = Object.freeze({
-    folder: ['0 0 512 512', 'M64 480H448c35.3 0 64-28.7 64-64V160c0-35.3-28.7-64-64-64H288c-10.1 0-19.6-4.7-25.6-12.8L243.2 57.6C231.1 41.5 212.1 32 192 32H64C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64z'],
-    code: ['0 0 640 512', 'M392.8 1.2c-17-4.9-34.7 5-39.6 22l-128 448c-4.9 17 5 34.7 22 39.6s34.7-5 39.6-22l128-448c4.9-17 5-34.7-22-39.6zm80.6 120.1c-12.5 12.5-12.5 32.8 0 45.3L562.7 256l-89.4 89.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l112-112c12.5-12.5 12.5-32.8 0-45.3l-112-112c-12.5-12.5-32.8-12.5-45.3 0zm-306.7 0c-12.5-12.5-32.8-12.5-45.3 0l-112 112c-12.5 12.5-12.5 32.8 0 45.3l112 112c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L77.3 256l89.4-89.4c12.5-12.5 12.5-32.8 0-45.3z'],
-    terminal: ['0 0 576 512', 'M9.4 86.6C-3.1 74.1-3.1 53.9 9.4 41.4s32.8-12.5 45.3 0l192 192c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L178.7 256 9.4 86.6zM256 416l288 0c17.7 0 32 14.3 32 32s-14.3 32-32 32l-288 0c-17.7 0-32-14.3-32-32s14.3-32 32-32z'],
-    file: ['0 0 384 512', 'M0 64C0 28.7 28.7 0 64 0L224 0l0 128c0 17.7 14.3 32 32 32l128 0 0 288c0 35.3-28.7 64-64 64L64 512c-35.3 0-64-28.7-64-64L0 64zm384 64l-128 0L256 0 384 128z'],
+  const FOLDER_PATH = 'M1.75 1h4.59c.46 0 .91.18 1.23.51l.92.91c.14.14.33.22.53.22h5.23c.97 0 1.75.78 1.75 1.75v8.86c0 .97-.78 1.75-1.75 1.75H1.75A1.75 1.75 0 0 1 0 13.25V2.75C0 1.78.78 1 1.75 1Z';
+  const FILE_PATH = 'M3.75 1h5.59L13 4.66v10.09c0 .69-.56 1.25-1.25 1.25h-8A1.75 1.75 0 0 1 2 14.25v-11.5C2 1.78 2.78 1 3.75 1Zm5.25 1.5v3h3v-.22L9.22 2.5H9Z';
+  const CODE_PATH = [FILE_PATH, 'M5.25 9.5 3.75 11l1.5 1.5m5-3L11.75 11l-1.5 1.5'];
+  const PACKAGE_PATH = 'M8 1 14 4.25v7.5L8 15l-6-3.25v-7.5L8 1Zm0 1.72L3.5 5.16 8 7.59l4.5-2.43L8 2.72ZM3.5 6.44v4.42l3.75 2.03V8.47L3.5 6.44Zm9 0L8.75 8.47v4.42l3.75-2.03V6.44Z';
+  const GITHUB_TOOLS_ICON_PATHS = Object.freeze({
+    folder: [FOLDER_PATH],
+    'folder-github': [FOLDER_PATH],
+    'folder-git': [FOLDER_PATH],
+    'folder-vscode': [FOLDER_PATH],
+    'folder-docs': [FOLDER_PATH],
+    'folder-test': [FOLDER_PATH],
+    'folder-images': [FOLDER_PATH],
+    'folder-public': [FOLDER_PATH],
+    'folder-src': [FOLDER_PATH],
+    'folder-packages': [FOLDER_PATH, PACKAGE_PATH],
+    'folder-scripts': [FOLDER_PATH],
+    'folder-tools': [FOLDER_PATH],
+    'folder-config': [FOLDER_PATH],
+    file: [FILE_PATH],
+    javascript: CODE_PATH,
+    react: CODE_PATH,
+    typescript: CODE_PATH,
+    json: CODE_PATH,
+    html: CODE_PATH,
+    css: CODE_PATH,
+    vue: CODE_PATH,
+    svelte: CODE_PATH,
+    astro: CODE_PATH,
+    python: CODE_PATH,
+    ruby: CODE_PATH,
+    go: CODE_PATH,
+    rust: CODE_PATH,
+    java: CODE_PATH,
+    kotlin: CODE_PATH,
+    php: CODE_PATH,
+    c: CODE_PATH,
+    cpp: CODE_PATH,
+    swift: CODE_PATH,
+    yaml: CODE_PATH,
+    'npm/package': [PACKAGE_PATH],
+    'npm/lock': [PACKAGE_PATH],
+    pnpm: [PACKAGE_PATH],
+    yarn: [PACKAGE_PATH],
+    docker: [PACKAGE_PATH],
+    markdown: [FILE_PATH],
+    license: [FILE_PATH],
+    git: [FILE_PATH],
+    settings: [FILE_PATH],
+    table: [FILE_PATH],
+    presentation: [FILE_PATH],
+    graphql: [FILE_PATH],
+    terminal: [FILE_PATH],
+    database: [FILE_PATH],
+    image: [FILE_PATH],
+    audio: [FILE_PATH],
+    video: [FILE_PATH],
+    archive: [FILE_PATH],
+    font: [FILE_PATH],
+    lock: [FILE_PATH],
+    pdf: [FILE_PATH],
+    document: [FILE_PATH],
   });
 
-  const FONT_AWESOME_ICON_PATHS = Object.freeze({
-    "fa-markdown": ['0 0 640 512', "M593.8 59.1H46.2C20.7 59.1 0 79.8 0 105.2v301.5c0 25.5 20.7 46.2 46.2 46.2h547.7c25.5 0 46.2-20.7 46.1-46.1V105.2c0-25.4-20.7-46.1-46.2-46.1zM338.5 360.6H277v-120l-61.5 76.9-61.5-76.9v120H92.3V151.4h61.5l61.5 76.9 61.5-76.9h61.5v209.2zm135.3 3.1L381.5 256H443V151.4h61.5V256H566z"],
-    "fa-git-alt": ['0 0 448 512', "M439.55 236.05L244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"],
-    "fa-js": ['0 0 448 512', "M0 32v448h448V32H0zm243.8 349.4c0 43.6-25.6 63.5-62.9 63.5-33.7 0-53.2-17.4-63.2-38.5l34.3-20.7c6.6 11.7 12.6 21.6 27.1 21.6 13.8 0 22.6-5.4 22.6-26.5V237.7h42.1v143.7zm99.6 63.5c-39.1 0-64.4-18.6-76.7-43l34.3-19.8c9 14.7 20.8 25.6 41.5 25.6 17.4 0 28.6-8.7 28.6-20.8 0-14.4-11.4-19.5-30.7-28l-10.5-4.5c-30.4-12.9-50.5-29.2-50.5-63.5 0-31.6 24.1-55.6 61.6-55.6 26.8 0 46 9.3 59.8 33.7L368 290c-7.2-12.9-15-18-27.1-18-12.3 0-20.1 7.8-20.1 18 0 12.6 7.8 17.7 25.9 25.6l10.5 4.5c35.8 15.3 55.9 31 55.9 66.2 0 37.8-29.8 58.6-69.7 58.6z"],
-    "fa-node-js": ['0 0 448 512', "M224 508c-6.7 0-13.5-1.8-19.4-5.2l-61.7-36.5c-9.2-5.2-4.7-7-1.7-8 12.3-4.3 14.8-5.2 27.9-12.7 1.4-.8 3.2-.5 4.6.4l47.4 28.1c1.7 1 4.1 1 5.7 0l184.7-106.6c1.7-1 2.8-3 2.8-5V149.3c0-2.1-1.1-4-2.9-5.1L226.8 37.7c-1.7-1-4-1-5.7 0L36.6 144.3c-1.8 1-2.9 3-2.9 5.1v213.1c0 2 1.1 4 2.9 4.9l50.6 29.2c27.5 13.7 44.3-2.4 44.3-18.7V167.5c0-3 2.4-5.3 5.4-5.3h23.4c2.9 0 5.4 2.3 5.4 5.3V378c0 36.6-20 57.6-54.7 57.6-10.7 0-19.1 0-42.5-11.6l-48.4-27.9C8.1 389.2.7 376.3.7 362.4V149.3c0-13.8 7.4-26.8 19.4-33.7L204.6 9c11.7-6.6 27.2-6.6 38.8 0l184.7 106.7c12 6.9 19.4 19.8 19.4 33.7v213.1c0 13.8-7.4 26.7-19.4 33.7L243.4 502.8c-5.9 3.4-12.6 5.2-19.4 5.2zm149.1-210.1c0-39.9-27-50.5-83.7-58-57.4-7.6-63.2-11.5-63.2-24.9 0-11.1 4.9-25.9 47.4-25.9 37.9 0 51.9 8.2 57.7 33.8.5 2.4 2.7 4.2 5.2 4.2h24c1.5 0 2.9-.6 3.9-1.7s1.5-2.6 1.4-4.1c-3.7-44.1-33-64.6-92.2-64.6-52.7 0-84.1 22.2-84.1 59.5 0 40.4 31.3 51.6 81.8 56.6 60.5 5.9 65.2 14.8 65.2 26.7 0 20.6-16.6 29.4-55.5 29.4-48.9 0-59.6-12.3-63.2-36.6-.4-2.6-2.6-4.5-5.3-4.5h-23.9c-3 0-5.3 2.4-5.3 5.3 0 31.1 16.9 68.2 97.8 68.2 58.4-.1 92-23.2 92-63.4z"],
-    "fa-npm": ['0 0 576 512', "M288 288h-32v-64h32v64zm288-128v192H288v32H160v-32H0V160h576zm-416 32H32v128h64v-96h32v96h32V192zm160 0H192v160h64v-32h64V192zm224 0H352v128h64v-96h32v96h32v-96h32v96h32V192z"],
-    "fa-python": ['0 0 448 512', "M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6zM286.2 404c11.1 0 20.1 9.1 20.1 20.3 0 11.3-9 20.4-20.1 20.4-11 0-20.1-9.2-20.1-20.4.1-11.3 9.1-20.3 20.1-20.3zM167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4zm-6.7-142.6c-11.1 0-20.1-9.1-20.1-20.3.1-11.3 9-20.4 20.1-20.4 11 0 20.1 9.2 20.1 20.4s-9 20.3-20.1 20.3z"],
-    "fa-docker": ['0 0 640 512', "M349.9 236.3h-66.1v-59.4h66.1v59.4zm0-204.3h-66.1v60.7h66.1V32zm78.2 144.8H362v59.4h66.1v-59.4zm-156.3-72.1h-66.1v60.1h66.1v-60.1zm78.1 0h-66.1v60.1h66.1v-60.1zm276.8 100c-14.4-9.7-47.6-13.2-73.1-8.4-3.3-24-16.7-44.9-41.1-63.7l-14-9.3-9.3 14c-18.4 27.8-23.4 73.6-3.7 103.8-8.7 4.7-25.8 11.1-48.4 10.7H2.4c-8.7 50.8 5.8 116.8 44 162.1 37.1 43.9 92.7 66.2 165.4 66.2 157.4 0 273.9-72.5 328.4-204.2 21.4.4 67.6.1 91.3-45.2 1.5-2.5 6.6-13.2 8.5-17.1l-13.3-8.9zm-511.1-27.9h-66v59.4h66.1v-59.4zm78.1 0h-66.1v59.4h66.1v-59.4zm78.1 0h-66.1v59.4h66.1v-59.4zm-78.1-72.1h-66.1v60.1h66.1v-60.1z"],
-    "fa-html5": ['0 0 384 512', "M0 32l34.9 395.8L191.5 480l157.6-52.2L384 32H0zm308.2 127.9H124.4l4.1 49.4h175.6l-13.6 148.4-97.9 27v.3h-1.1l-98.7-27.3-6-75.8h47.7L138 320l53.5 14.5 53.7-14.5 6-62.2H84.3L71.5 112.2h241.1l-4.4 47.7z"],
-    "fa-css3-alt": ['0 0 384 512', "M0 32l34.9 395.8L192 480l157.1-52.2L384 32H0zm313.1 80l-4.8 47.3L193 208.6l-.3.1h111.5l-12.8 146.6-98.2 28.7-98.8-29.2-6.4-73.9h48.9l3.2 38.3 52.6 13.3 54.7-15.4 3.7-61.6-166.3-.5v-.1l-.2.1-3.6-46.3L193.1 162l6.5-2.7H76.7L70.9 112h242.2z"],
-    "fa-file-code": ['0 0 384 512', "M64 0C28.7 0 0 28.7 0 64L0 448c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-288-128 0c-17.7 0-32-14.3-32-32L224 0 64 0zM256 0l0 128 128 0L256 0zM153 289l-31 31 31 31c9.4 9.4 9.4 24.6 0 33.9s-24.6 9.4-33.9 0L71 337c-9.4-9.4-9.4-24.6 0-33.9l48-48c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9zM265 255l48 48c9.4 9.4 9.4 24.6 0 33.9l-48 48c-9.4 9.4-24.6 9.4-33.9 0s-9.4-24.6 0-33.9l31-31-31-31c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0z"],
-    "fa-file-lines": ['0 0 384 512', "M64 0C28.7 0 0 28.7 0 64L0 448c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-288-128 0c-17.7 0-32-14.3-32-32L224 0 64 0zM256 0l0 128 128 0L256 0zM112 256l160 0c8.8 0 16 7.2 16 16s-7.2 16-16 16l-160 0c-8.8 0-16-7.2-16-16s7.2-16 16-16zm0 64l160 0c8.8 0 16 7.2 16 16s-7.2 16-16 16l-160 0c-8.8 0-16-7.2-16-16s7.2-16 16-16zm0 64l160 0c8.8 0 16 7.2 16 16s-7.2 16-16 16l-160 0c-8.8 0-16-7.2-16-16s7.2-16 16-16z"],
-    "fa-file-pdf": ['0 0 512 512', "M0 64C0 28.7 28.7 0 64 0L224 0l0 128c0 17.7 14.3 32 32 32l128 0 0 144-208 0c-35.3 0-64 28.7-64 64l0 144-48 0c-35.3 0-64-28.7-64-64L0 64zm384 64l-128 0L256 0 384 128zM176 352l32 0c30.9 0 56 25.1 56 56s-25.1 56-56 56l-16 0 0 32c0 8.8-7.2 16-16 16s-16-7.2-16-16l0-48 0-80c0-8.8 7.2-16 16-16zm32 80c13.3 0 24-10.7 24-24s-10.7-24-24-24l-16 0 0 48 16 0zm96-80l32 0c26.5 0 48 21.5 48 48l0 64c0 26.5-21.5 48-48 48l-32 0c-8.8 0-16-7.2-16-16l0-128c0-8.8 7.2-16 16-16zm32 128c8.8 0 16-7.2 16-16l0-64c0-8.8-7.2-16-16-16l-16 0 0 96 16 0zm80-112c0-8.8 7.2-16 16-16l48 0c8.8 0 16 7.2 16 16s-7.2 16-16 16l-32 0 0 32 32 0c8.8 0 16 7.2 16 16s-7.2 16-16 16l-32 0 0 48c0 8.8-7.2 16-16 16s-16-7.2-16-16l0-64 0-64z"],
-    "fa-file-image": ['0 0 384 512', "M64 0C28.7 0 0 28.7 0 64L0 448c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-288-128 0c-17.7 0-32-14.3-32-32L224 0 64 0zM256 0l0 128 128 0L256 0zM64 256a32 32 0 1 1 64 0 32 32 0 1 1 -64 0zm152 32c5.3 0 10.2 2.6 13.2 6.9l88 128c3.4 4.9 3.7 11.3 1 16.5s-8.2 8.6-14.2 8.6l-88 0-40 0-48 0-48 0c-5.8 0-11.1-3.1-13.9-8.1s-2.8-11.2 .2-16.1l48-80c2.9-4.8 8.1-7.8 13.7-7.8s10.8 2.9 13.7 7.8l12.8 21.4 48.3-70.2c3-4.3 7.9-6.9 13.2-6.9z"],
-    "fa-terminal": ['0 0 576 512', "M9.4 86.6C-3.1 74.1-3.1 53.9 9.4 41.4s32.8-12.5 45.3 0l192 192c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L178.7 256 9.4 86.6zM256 416l288 0c17.7 0 32 14.3 32 32s-14.3 32-32 32l-288 0c-17.7 0-32-14.3-32-32s14.3-32 32-32z"],
-    "fa-database": ['0 0 448 512', "M448 80l0 48c0 44.2-100.3 80-224 80S0 172.2 0 128L0 80C0 35.8 100.3 0 224 0S448 35.8 448 80zM393.2 214.7c20.8-7.4 39.9-16.9 54.8-28.6L448 288c0 44.2-100.3 80-224 80S0 332.2 0 288L0 186.1c14.9 11.8 34 21.2 54.8 28.6C99.7 230.7 159.5 240 224 240s124.3-9.3 169.2-25.3zM0 346.1c14.9 11.8 34 21.2 54.8 28.6C99.7 390.7 159.5 400 224 400s124.3-9.3 169.2-25.3c20.8-7.4 39.9-16.9 54.8-28.6l0 85.9c0 44.2-100.3 80-224 80S0 476.2 0 432l0-85.9z"],
-    "fa-folder": ['0 0 512 512', "M64 480H448c35.3 0 64-28.7 64-64V160c0-35.3-28.7-64-64-64H288c-10.1 0-19.6-4.7-25.6-12.8L243.2 57.6C231.1 41.5 212.1 32 192 32H64C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64z"],
-    "fa-file": ['0 0 384 512', "M0 64C0 28.7 28.7 0 64 0L224 0l0 128c0 17.7 14.3 32 32 32l128 0 0 288c0 35.3-28.7 64-64 64L64 512c-35.3 0-64-28.7-64-64L0 64zm384 64l-128 0L256 0 384 128z"],
-    "fa-file-audio": ['0 0 384 512', "M64 0C28.7 0 0 28.7 0 64L0 448c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-288-128 0c-17.7 0-32-14.3-32-32L224 0 64 0zM256 0l0 128 128 0L256 0zm2 226.3c37.1 22.4 62 63.1 62 109.7s-24.9 87.3-62 109.7c-7.6 4.6-17.4 2.1-22-5.4s-2.1-17.4 5.4-22C269.4 401.5 288 370.9 288 336s-18.6-65.5-46.5-82.3c-7.6-4.6-10-14.4-5.4-22s14.4-10 22-5.4zm-91.9 30.9c6 2.5 9.9 8.3 9.9 14.8l0 128c0 6.5-3.9 12.3-9.9 14.8s-12.9 1.1-17.4-3.5L113.4 376 80 376c-8.8 0-16-7.2-16-16l0-48c0-8.8 7.2-16 16-16l33.4 0 35.3-35.3c4.6-4.6 11.5-5.9 17.4-3.5z"],
-    "fa-file-excel": ['0 0 384 512', "M64 0C28.7 0 0 28.7 0 64L0 448c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-288-128 0c-17.7 0-32-14.3-32-32L224 0 64 0zM256 0l0 128 128 0L256 0zM155.7 250.2L192 302.1l36.3-51.9c7.6-10.9 22.6-13.5 33.4-5.9s13.5 22.6 5.9 33.4L221.3 344l46.4 66.2c7.6 10.9 5 25.8-5.9 33.4s-25.8 5-33.4-5.9L192 385.8l-36.3 51.9c-7.6 10.9-22.6 13.5-33.4 5.9s-13.5-22.6-5.9-33.4L162.7 344l-46.4-66.2c-7.6-10.9-5-25.8 5.9-33.4s25.8-5 33.4 5.9z"],
-    "fa-file-powerpoint": ['0 0 384 512', "M64 0C28.7 0 0 28.7 0 64L0 448c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-288-128 0c-17.7 0-32-14.3-32-32L224 0 64 0zM256 0l0 128 128 0L256 0zM136 240l68 0c42 0 76 34 76 76s-34 76-76 76l-44 0 0 32c0 13.3-10.7 24-24 24s-24-10.7-24-24l0-56 0-104c0-13.3 10.7-24 24-24zm68 104c15.5 0 28-12.5 28-28s-12.5-28-28-28l-44 0 0 56 44 0z"],
-    "fa-file-video": ['0 0 384 512', "M64 0C28.7 0 0 28.7 0 64L0 448c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-288-128 0c-17.7 0-32-14.3-32-32L224 0 64 0zM256 0l0 128 128 0L256 0zM64 288c0-17.7 14.3-32 32-32l96 0c17.7 0 32 14.3 32 32l0 96c0 17.7-14.3 32-32 32l-96 0c-17.7 0-32-14.3-32-32l0-96zM300.9 397.9L256 368l0-64 44.9-29.9c2-1.3 4.4-2.1 6.8-2.1c6.8 0 12.3 5.5 12.3 12.3l0 103.4c0 6.8-5.5 12.3-12.3 12.3c-2.4 0-4.8-.7-6.8-2.1z"],
-    "fa-file-word": ['0 0 384 512', "M64 0C28.7 0 0 28.7 0 64L0 448c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-288-128 0c-17.7 0-32-14.3-32-32L224 0 64 0zM256 0l0 128 128 0L256 0zM111 257.1l26.8 89.2 31.6-90.3c3.4-9.6 12.5-16.1 22.7-16.1s19.3 6.4 22.7 16.1l31.6 90.3L273 257.1c3.8-12.7 17.2-19.9 29.9-16.1s19.9 17.2 16.1 29.9l-48 160c-3 10-12 16.9-22.4 17.1s-19.8-6.2-23.2-16.1L192 336.6l-33.3 95.3c-3.4 9.8-12.8 16.3-23.2 16.1s-19.5-7.1-22.4-17.1l-48-160c-3.8-12.7 3.4-26.1 16.1-29.9s26.1 3.4 29.9 16.1z"],
-    "fa-file-zipper": ['0 0 384 512', "M64 0C28.7 0 0 28.7 0 64L0 448c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-288-128 0c-17.7 0-32-14.3-32-32L224 0 64 0zM256 0l0 128 128 0L256 0zM96 48c0-8.8 7.2-16 16-16l32 0c8.8 0 16 7.2 16 16s-7.2 16-16 16l-32 0c-8.8 0-16-7.2-16-16zm0 64c0-8.8 7.2-16 16-16l32 0c8.8 0 16 7.2 16 16s-7.2 16-16 16l-32 0c-8.8 0-16-7.2-16-16zm0 64c0-8.8 7.2-16 16-16l32 0c8.8 0 16 7.2 16 16s-7.2 16-16 16l-32 0c-8.8 0-16-7.2-16-16zm-6.3 71.8c3.7-14 16.4-23.8 30.9-23.8l14.8 0c14.5 0 27.2 9.7 30.9 23.8l23.5 88.2c1.4 5.4 2.1 10.9 2.1 16.4c0 35.2-28.8 63.7-64 63.7s-64-28.5-64-63.7c0-5.5 .7-11.1 2.1-16.4l23.5-88.2zM112 336c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0z"],
-    "fa-font": ['0 0 448 512', "M254 52.8C249.3 40.3 237.3 32 224 32s-25.3 8.3-30 20.8L57.8 416 32 416c-17.7 0-32 14.3-32 32s14.3 32 32 32l96 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-1.8 0 18-48 159.6 0 18 48-1.8 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l96 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-25.8 0L254 52.8zM279.8 304l-111.6 0L224 155.1 279.8 304z"],
-    "fa-gears": ['0 0 640 512', "M308.5 135.3c7.1-6.3 9.9-16.2 6.2-25c-2.3-5.3-4.8-10.5-7.6-15.5L304 89.4c-3-5-6.3-9.9-9.8-14.6c-5.7-7.6-15.7-10.1-24.7-7.1l-28.2 9.3c-10.7-8.8-23-16-36.2-20.9L199 27.1c-1.9-9.3-9.1-16.7-18.5-17.8C173.9 8.4 167.2 8 160.4 8l-.7 0c-6.8 0-13.5 .4-20.1 1.2c-9.4 1.1-16.6 8.6-18.5 17.8L115 56.1c-13.3 5-25.5 12.1-36.2 20.9L50.5 67.8c-9-3-19-.5-24.7 7.1c-3.5 4.7-6.8 9.6-9.9 14.6l-3 5.3c-2.8 5-5.3 10.2-7.6 15.6c-3.7 8.7-.9 18.6 6.2 25l22.2 19.8C32.6 161.9 32 168.9 32 176s.6 14.1 1.7 20.9L11.5 216.7c-7.1 6.3-9.9 16.2-6.2 25c2.3 5.3 4.8 10.5 7.6 15.6l3 5.2c3 5.1 6.3 9.9 9.9 14.6c5.7 7.6 15.7 10.1 24.7 7.1l28.2-9.3c10.7 8.8 23 16 36.2 20.9l6.1 29.1c1.9 9.3 9.1 16.7 18.5 17.8c6.7 .8 13.5 1.2 20.4 1.2s13.7-.4 20.4-1.2c9.4-1.1 16.6-8.6 18.5-17.8l6.1-29.1c13.3-5 25.5-12.1 36.2-20.9l28.2 9.3c9 3 19 .5 24.7-7.1c3.5-4.7 6.8-9.5 9.8-14.6l3.1-5.4c2.8-5 5.3-10.2 7.6-15.5c3.7-8.7 .9-18.6-6.2-25l-22.2-19.8c1.1-6.8 1.7-13.8 1.7-20.9s-.6-14.1-1.7-20.9l22.2-19.8zM112 176a48 48 0 1 1 96 0 48 48 0 1 1 -96 0z"],
-    "fa-lock": ['0 0 448 512', "M144 144l0 48 160 0 0-48c0-44.2-35.8-80-80-80s-80 35.8-80 80zM80 192l0-48C80 64.5 144.5 0 224 0s144 64.5 144 144l0 48 16 0c35.3 0 64 28.7 64 64l0 192c0 35.3-28.7 64-64 64L64 512c-35.3 0-64-28.7-64-64L0 256c0-35.3 28.7-64 64-64l16 0z"],
-    "fa-scale-balanced": ['0 0 640 512', "M384 32l128 0c17.7 0 32 14.3 32 32s-14.3 32-32 32L398.4 96c-5.2 25.8-22.9 47.1-46.4 57.3L352 448l160 0c17.7 0 32 14.3 32 32s-14.3 32-32 32l-192 0-192 0c-17.7 0-32-14.3-32-32s14.3-32 32-32l160 0 0-294.7c-23.5-10.3-41.2-31.6-46.4-57.3L128 96c-17.7 0-32-14.3-32-32s14.3-32 32-32l128 0c14.6-19.4 37.8-32 64-32s49.4 12.6 64 32zm55.6 288l144.9 0L512 195.8 439.6 320zM512 416c-62.9 0-115.2-34-126-78.9c-2.6-11 1-22.3 6.7-32.1l95.2-163.2c5-8.6 14.2-13.8 24.1-13.8s19.1 5.3 24.1 13.8l95.2 163.2c5.7 9.8 9.3 21.1 6.7 32.1C627.2 382 574.9 416 512 416zM126.8 195.8L54.4 320l144.9 0L126.8 195.8zM.9 337.1c-2.6-11 1-22.3 6.7-32.1l95.2-163.2c5-8.6 14.2-13.8 24.1-13.8s19.1 5.3 24.1 13.8l95.2 163.2c5.7 9.8 9.3 21.1 6.7 32.1C242 382 189.7 416 126.8 416S11.7 382 .9 337.1z"],
-    "fa-sliders": ['0 0 512 512', "M0 416c0 17.7 14.3 32 32 32l54.7 0c12.3 28.3 40.5 48 73.3 48s61-19.7 73.3-48L480 448c17.7 0 32-14.3 32-32s-14.3-32-32-32l-246.7 0c-12.3-28.3-40.5-48-73.3-48s-61 19.7-73.3 48L32 384c-17.7 0-32 14.3-32 32zm128 0a32 32 0 1 1 64 0 32 32 0 1 1 -64 0zM320 256a32 32 0 1 1 64 0 32 32 0 1 1 0-64 32 32 0 0 1 64 0zm32-80c-32.8 0-61 19.7-73.3 48L32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l246.7 0c12.3 28.3 40.5 48 73.3 48s61-19.7 73.3-48l54.7 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-54.7 0c-12.3-28.3-40.5-48-73.3-48zM192 128a32 32 0 1 1 0-64 32 32 0 0 1 0 64zm73.3-64C253 35.7 224.8 16 192 16s-61 19.7-73.3 48L32 64C14.3 64 0 78.3 0 96s14.3 32 32 32l86.7 0c12.3 28.3 40.5 48 73.3 48s61-19.7 73.3-48L480 128c17.7 0 32-14.3 32-32s-14.3-32-32-32L265.3 64z"],
-  });
-
-  const FILE_ICON_BY_EXTENSION = Object.freeze({ 
-    js: faIcon('fa-brands fa-js', 'brand'),
-    jsx: faIcon('fa-brands fa-react', 'brand'),
-    ts: faIcon('fa-solid fa-file-code'),
-    tsx: faIcon('fa-brands fa-react', 'brand'),
-    mjs: faIcon('fa-brands fa-js', 'brand'),
-    cjs: faIcon('fa-brands fa-js', 'brand'),
-    json: faIcon('fa-solid fa-file-code'),
-    json5: faIcon('fa-solid fa-file-code'),
-    jsonc: faIcon('fa-solid fa-file-code'),
-    html: faIcon('fa-brands fa-html5', 'brand'),
-    htm: faIcon('fa-brands fa-html5', 'brand'),
-    xhtml: faIcon('fa-brands fa-html5', 'brand'),
-    css: faIcon('fa-brands fa-css3-alt', 'brand'),
-    scss: faIcon('fa-solid fa-file-code'),
-    sass: faIcon('fa-solid fa-file-code'),
-    less: faIcon('fa-solid fa-file-code'),
-    styl: faIcon('fa-solid fa-file-code'),
-    vue: faIcon('fa-brands fa-vuejs', 'brand'),
-    svelte: faIcon('fa-solid fa-file-code'),
-    astro: faIcon('fa-solid fa-file-code'),
-
-    py: faIcon('fa-brands fa-python', 'brand'),
-    pyw: faIcon('fa-brands fa-python', 'brand'),
-    rb: faIcon('fa-solid fa-gem'),
-    rake: faIcon('fa-solid fa-gem'),
-    go: faIcon('fa-brands fa-golang', 'brand'),
-    rs: faIcon('fa-solid fa-file-code'),
-    java: faIcon('fa-brands fa-java', 'brand'),
-    kt: faIcon('fa-solid fa-file-code'),
-    kts: faIcon('fa-solid fa-file-code'),
-    php: faIcon('fa-brands fa-php', 'brand'),
-    c: faIcon('fa-solid fa-file-code'),
-    h: faIcon('fa-solid fa-file-code'),
-    cc: faIcon('fa-solid fa-file-code'),
-    cpp: faIcon('fa-solid fa-file-code'),
-    cxx: faIcon('fa-solid fa-file-code'),
-    hpp: faIcon('fa-solid fa-file-code'),
-    cs: faIcon('fa-solid fa-file-code'),
-    swift: faIcon('fa-brands fa-swift', 'brand'),
-    dart: faIcon('fa-solid fa-file-code'),
-    lua: faIcon('fa-solid fa-file-code'),
-    pl: faIcon('fa-solid fa-file-code'),
-    pm: faIcon('fa-solid fa-file-code'),
-    r: faIcon('fa-brands fa-r-project', 'brand'),
-    scala: faIcon('fa-solid fa-file-code'),
-    groovy: faIcon('fa-solid fa-file-code'),
-    ex: faIcon('fa-solid fa-file-code'),
-    exs: faIcon('fa-solid fa-file-code'),
-    erl: faIcon('fa-solid fa-file-code'),
-    hrl: faIcon('fa-solid fa-file-code'),
-    fs: faIcon('fa-solid fa-file-code'),
-    fsx: faIcon('fa-solid fa-file-code'),
-    vb: faIcon('fa-solid fa-file-code'),
-    asm: faIcon('fa-solid fa-file-code'),
-
-    sql: faIcon('fa-solid fa-database'),
-    graphql: faIcon('fa-solid fa-file-code'),
-    gql: faIcon('fa-solid fa-file-code'),
-    sh: faIcon('fa-solid fa-terminal'),
-    bash: faIcon('fa-solid fa-terminal'),
-    zsh: faIcon('fa-solid fa-terminal'),
-    fish: faIcon('fa-solid fa-terminal'),
-    ps1: faIcon('fa-solid fa-terminal'),
-    psm1: faIcon('fa-solid fa-terminal'),
-    bat: faIcon('fa-solid fa-terminal'),
-    cmd: faIcon('fa-solid fa-terminal'),
-    yml: faIcon('fa-solid fa-file-code'),
-    yaml: faIcon('fa-solid fa-file-code'),
-    toml: faIcon('fa-solid fa-file-code'),
-    xml: faIcon('fa-solid fa-file-code'),
-    xsd: faIcon('fa-solid fa-file-code'),
-    ini: faIcon('fa-solid fa-file-code'),
-    conf: faIcon('fa-solid fa-file-code'),
-    config: faIcon('fa-solid fa-file-code'),
-    properties: faIcon('fa-solid fa-file-code'),
-    env: faIcon('fa-solid fa-sliders'),
-
-    md: faIcon('fa-brands fa-markdown', 'brand'),
-    markdown: faIcon('fa-brands fa-markdown', 'brand'),
-    mdx: faIcon('fa-brands fa-markdown', 'brand'),
-    txt: faIcon('fa-solid fa-file-lines'),
-    log: faIcon('fa-solid fa-file-lines'),
-    rst: faIcon('fa-solid fa-file-lines'),
-    adoc: faIcon('fa-solid fa-file-lines'),
-    pdf: faIcon('fa-solid fa-file-pdf'),
-    doc: faIcon('fa-solid fa-file-word'),
-    docx: faIcon('fa-solid fa-file-word'),
-    odt: faIcon('fa-solid fa-file-word'),
-    rtf: faIcon('fa-solid fa-file-word'),
-    xls: faIcon('fa-solid fa-file-excel'),
-    xlsx: faIcon('fa-solid fa-file-excel'),
-    ods: faIcon('fa-solid fa-file-excel'),
-    csv: faIcon('fa-solid fa-file-excel'),
-    tsv: faIcon('fa-solid fa-file-excel'),
-    ppt: faIcon('fa-solid fa-file-powerpoint'),
-    pptx: faIcon('fa-solid fa-file-powerpoint'),
-    odp: faIcon('fa-solid fa-file-powerpoint'),
-
-    png: faIcon('fa-solid fa-file-image'),
-    jpg: faIcon('fa-solid fa-file-image'),
-    jpeg: faIcon('fa-solid fa-file-image'),
-    gif: faIcon('fa-solid fa-file-image'),
-    webp: faIcon('fa-solid fa-file-image'),
-    svg: faIcon('fa-solid fa-file-image'),
-    ico: faIcon('fa-solid fa-file-image'),
-    bmp: faIcon('fa-solid fa-file-image'),
-    tiff: faIcon('fa-solid fa-file-image'),
-    avif: faIcon('fa-solid fa-file-image'),
-    mp3: faIcon('fa-solid fa-file-audio'),
-    wav: faIcon('fa-solid fa-file-audio'),
-    ogg: faIcon('fa-solid fa-file-audio'),
-    flac: faIcon('fa-solid fa-file-audio'),
-    mp4: faIcon('fa-solid fa-file-video'),
-    mov: faIcon('fa-solid fa-file-video'),
-    webm: faIcon('fa-solid fa-file-video'),
-    avi: faIcon('fa-solid fa-file-video'),
-    zip: faIcon('fa-solid fa-file-zipper'),
-    gz: faIcon('fa-solid fa-file-zipper'),
-    tgz: faIcon('fa-solid fa-file-zipper'),
-    bz2: faIcon('fa-solid fa-file-zipper'),
-    xz: faIcon('fa-solid fa-file-zipper'),
-    '7z': faIcon('fa-solid fa-file-zipper'),
-    rar: faIcon('fa-solid fa-file-zipper'),
-    ttf: faIcon('fa-solid fa-font'),
-    otf: faIcon('fa-solid fa-font'),
-    woff: faIcon('fa-solid fa-font'),
-    woff2: faIcon('fa-solid fa-font'),
-    lock: faIcon('fa-solid fa-lock'),
-  });
-
-  const FILE_ICON_BY_NAME = Object.freeze({
-    dockerfile: faIcon('fa-brands fa-docker', 'brand'),
-    '.dockerignore': faIcon('fa-brands fa-docker', 'brand'),
-    'package.json': faIcon('fa-brands fa-node-js', 'brand'),
-    'package-lock.json': faIcon('fa-brands fa-npm', 'brand'),
-    'pnpm-lock.yaml': faIcon('fa-brands fa-node-js', 'brand'),
-    'yarn.lock': faIcon('fa-brands fa-node-js', 'brand'),
-    'bun.lock': faIcon('fa-brands fa-node-js', 'brand'),
-    'bun.lockb': faIcon('fa-brands fa-node-js', 'brand'),
-    'composer.json': faIcon('fa-brands fa-php', 'brand'),
-    gemfile: faIcon('fa-solid fa-gem'),
-    'gemfile.lock': faIcon('fa-solid fa-gem'),
-    rakefile: faIcon('fa-solid fa-gem'),
-    'go.mod': faIcon('fa-brands fa-golang', 'brand'),
-    'go.sum': faIcon('fa-brands fa-golang', 'brand'),
-    'cargo.toml': faIcon('fa-solid fa-file-code'),
-    'cargo.lock': faIcon('fa-solid fa-lock'),
-    requirements: faIcon('fa-brands fa-python', 'brand'),
-    'requirements.txt': faIcon('fa-brands fa-python', 'brand'),
-    'pyproject.toml': faIcon('fa-brands fa-python', 'brand'),
-    'setup.py': faIcon('fa-brands fa-python', 'brand'),
-
-    '.gitignore': faIcon('fa-brands fa-git-alt', 'brand'),
-    '.gitattributes': faIcon('fa-brands fa-git-alt', 'brand'),
-    '.gitmodules': faIcon('fa-brands fa-git-alt', 'brand'),
-    gitmessage: faIcon('fa-brands fa-git-alt', 'brand'),
-    'readme.md': faIcon('fa-solid fa-file-lines'),
-    readme: faIcon('fa-solid fa-file-lines'),
-    'changelog.md': faIcon('fa-solid fa-file-lines'),
-    changelog: faIcon('fa-solid fa-file-lines'),
-    'agents.md': faIcon('fa-solid fa-file-lines'),
-    'code_of_conduct.md': faIcon('fa-solid fa-file-lines'),
-    'contributing.md': faIcon('fa-solid fa-file-lines'),
-    'security.md': faIcon('fa-solid fa-file-lines'),
-    license: faIcon('fa-solid fa-scale-balanced'),
-    'license.md': faIcon('fa-solid fa-scale-balanced'),
-    notice: faIcon('fa-solid fa-scale-balanced'),
-    makefile: faIcon('fa-solid fa-terminal'),
-    cmakelists: faIcon('fa-solid fa-terminal'),
-    'cmakelists.txt': faIcon('fa-solid fa-terminal'),
-    justfile: faIcon('fa-solid fa-terminal'),
-    procfile: faIcon('fa-solid fa-terminal'),
-    '.env': faIcon('fa-solid fa-sliders'),
-    '.env.example': faIcon('fa-solid fa-sliders'),
-    '.nvmrc': faIcon('fa-brands fa-node-js', 'brand'),
-    '.tool-versions': faIcon('fa-solid fa-sliders'),
-    '.editorconfig': faIcon('fa-solid fa-gears'),
-    '.prettierrc': faIcon('fa-solid fa-gears'),
-    '.eslintrc': faIcon('fa-solid fa-gears'),
-    'biome.json': faIcon('fa-solid fa-gears'),
-    'tsconfig.json': faIcon('fa-solid fa-file-code'),
-    'vite.config.js': faIcon('fa-solid fa-gears'),
-    'vite.config.ts': faIcon('fa-solid fa-gears'),
-  });
-
-  const FOLDER_ICON_BY_NAME = Object.freeze({
-    '.github': faIcon('fa-brands fa-github', 'folder'),
-    '.git': faIcon('fa-brands fa-git-alt', 'folder'),
-    '.vscode': faIcon('fa-solid fa-code', 'folder'),
-    '.agents': faIcon('fa-solid fa-robot', 'folder'),
-    '.claude': faIcon('fa-solid fa-robot', 'folder'),
-    '.cline': faIcon('fa-solid fa-robot', 'folder'),
-    '.codex': faIcon('fa-solid fa-robot', 'folder'),
-    '.changeset': faIcon('fa-solid fa-list-check', 'folder'),
-    '.husky': faIcon('fa-solid fa-terminal', 'folder'),
-    '.greptile': faIcon('fa-solid fa-robot', 'folder'),
-    node_modules: faIcon('fa-brands fa-node-js', 'folder'),
-    docker: faIcon('fa-brands fa-docker', 'folder'),
-    docs: faIcon('fa-solid fa-book', 'folder'),
-    test: faIcon('fa-solid fa-vial', 'folder'),
-    tests: faIcon('fa-solid fa-vial', 'folder'),
-    e2e: faIcon('fa-solid fa-vial', 'folder'),
-    evals: faIcon('fa-solid fa-vial', 'folder'),
-    assets: faIcon('fa-solid fa-images', 'folder'),
-    images: faIcon('fa-solid fa-images', 'folder'),
-    public: faIcon('fa-solid fa-images', 'folder'),
-    src: faIcon('fa-solid fa-cubes', 'folder'),
-    lib: faIcon('fa-solid fa-cubes', 'folder'),
-    apps: faIcon('fa-solid fa-cubes', 'folder'),
-    packages: faIcon('fa-solid fa-cubes', 'folder'),
-    sdk: faIcon('fa-solid fa-cubes', 'folder'),
-    build: faIcon('fa-solid fa-box-archive', 'folder'),
-    dist: faIcon('fa-solid fa-box-archive', 'folder'),
-    target: faIcon('fa-solid fa-box-archive', 'folder'),
-    scripts: faIcon('fa-solid fa-terminal', 'folder'),
-    tools: faIcon('fa-solid fa-screwdriver-wrench', 'folder'),
-    config: faIcon('fa-solid fa-gears', 'folder'),
-    '.config': faIcon('fa-solid fa-gears', 'folder'),
-  });
-
-  const MATERIAL_ICON_BASE = 'https://raw.githubusercontent.com/material-extensions/vscode-material-icon-theme/main/icons/';
-  const createReferenceType = (icon, color) => Object.freeze({ icon, color });
-  const REFERENCE_TYPE_GROUPS = [
-    [['js', 'jsx', 'mjs', 'cjs'], 'javascript', '#b07219'],
-    [['ts', 'tsx'], 'typescript', '#007acc'],
-    [['json', 'json5', 'jsonc'], 'json', '#e44b23'],
-    [['html', 'htm', 'xhtml'], 'html', '#3498db'],
-    [['css', 'scss', 'sass', 'less', 'styl'], 'css', '#e67e22'],
-    [['vue'], 'vue', '#41b883'],
-    [['svelte'], 'svelte', '#ff3e00'],
-    [['astro'], 'astro', '#ff5d01'],
-    [['py', 'pyw'], 'python', '#3572a5'],
-    [['rb', 'rake'], 'ruby', '#701516'],
-    [['go'], 'go', '#00add8'],
-    [['rs'], 'rust', '#dea584'],
-    [['java'], 'java', '#b07219'],
-    [['kt', 'kts'], 'kotlin', '#7f52ff'],
-    [['php'], 'php', '#4f5d95'],
-    [['c'], 'c', '#555555'],
-    [['h', 'cc', 'cpp', 'cxx', 'hpp'], 'cpp', '#f34b7d'],
-    [['cs'], 'csharp', '#178600'],
-    [['swift'], 'swift', '#ffac45'],
-    [['dart'], 'dart', '#00b4ab'],
-    [['lua'], 'lua', '#000080'],
-    [['pl', 'pm'], 'perl', '#0298c3'],
-    [['r'], 'r', '#198ce7'],
-    [['scala'], 'scala', '#dc322f'],
-    [['groovy'], 'groovy', '#4298b8'],
-    [['ex', 'exs'], 'elixir', '#6e4a7e'],
-    [['erl', 'hrl'], 'erlang', '#b83998'],
-    [['fs', 'fsx'], 'fsharp', '#378bba'],
-    [['vb'], 'csharp', '#945db7'],
-    [['asm'], 'assembly', '#6e4c13'],
-    [['sql', 'graphql', 'gql'], 'database', '#eab308'],
-    [['sh', 'bash', 'zsh', 'fish'], 'console', '#89e051'],
-    [['ps1', 'psm1'], 'powershell', '#0298c3'],
-    [['bat', 'cmd'], 'console', '#4eaa25'],
-    [['yml', 'yaml'], 'yaml', '#e44b23'],
-    [['toml', 'xml', 'xsd', 'ini', 'conf', 'config', 'properties', 'env'], 'settings', '#64748b'],
-    [['md', 'markdown', 'mdx'], 'markdown', '#6e5494'],
-    [['txt', 'log', 'rst', 'adoc'], 'document', '#7f8c8d'],
-    [['pdf'], 'pdf', '#ef4444'],
-    [['doc', 'docx', 'odt', 'rtf'], 'document', '#2e77c0'],
-    [['xls', 'xlsx', 'ods', 'csv', 'tsv'], 'table', '#16a34a'],
-    [['ppt', 'pptx', 'odp'], 'table', '#f97316'],
-    [['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp', 'tiff', 'avif'], 'image', '#a855f7'],
-    [['mp3', 'wav', 'ogg', 'flac'], 'audio', '#ec4899'],
-    [['mp4', 'mov', 'webm', 'avi'], 'video', '#dc2626'],
-    [['zip', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar', 'tar'], 'zip', '#9b59b6'],
-    [['ttf', 'otf', 'woff', 'woff2'], 'font', '#f39c12'],
-    [['lock'], 'lock', '#64748b'],
-  ];
-  const REFERENCE_FILE_TYPES = Object.freeze(Object.fromEntries(
-    REFERENCE_TYPE_GROUPS.flatMap(([extensions, icon, color]) => extensions.map((extension) => [
-      extension,
-      createReferenceType(icon, color),
-    ])),
-  ));
-  const REFERENCE_FILE_NAMES = Object.freeze({
-    dockerfile: createReferenceType('docker', '#2496ed'),
-    '.dockerignore': createReferenceType('docker', '#2496ed'),
-    'package.json': createReferenceType('npm', '#cb3837'),
-    'package-lock.json': createReferenceType('npm', '#cb3837'),
-    'pnpm-lock.yaml': createReferenceType('npm', '#cb3837'),
-    'yarn.lock': createReferenceType('yarn', '#2c8ebb'),
-    'bun.lock': createReferenceType('javascript', '#f7df1e'),
-    'bun.lockb': createReferenceType('javascript', '#f7df1e'),
-    'go.mod': createReferenceType('go', '#00add8'),
-    'go.sum': createReferenceType('go', '#00add8'),
-    'cargo.toml': createReferenceType('rust', '#dea584'),
-    'cargo.lock': createReferenceType('lock', '#64748b'),
-    requirements: createReferenceType('python', '#3572a5'),
-    'requirements.txt': createReferenceType('python', '#3572a5'),
-    'pyproject.toml': createReferenceType('python', '#3572a5'),
-    'setup.py': createReferenceType('python', '#3572a5'),
-    '.gitignore': createReferenceType('git', '#f05032'),
-    '.gitattributes': createReferenceType('git', '#f05032'),
-    '.gitmodules': createReferenceType('git', '#f05032'),
-    gitmessage: createReferenceType('git', '#f05032'),
-    'readme.md': createReferenceType('markdown', '#e67e22'),
-    readme: createReferenceType('markdown', '#e67e22'),
-    'changelog.md': createReferenceType('markdown', '#e67e22'),
-    changelog: createReferenceType('markdown', '#e67e22'),
-    'agents.md': createReferenceType('markdown', '#6e5494'),
-    'code_of_conduct.md': createReferenceType('markdown', '#6e5494'),
-    'contributing.md': createReferenceType('markdown', '#6e5494'),
-    'security.md': createReferenceType('markdown', '#6e5494'),
-    license: createReferenceType('license', '#8b5cf6'),
-    'license.md': createReferenceType('license', '#8b5cf6'),
-    notice: createReferenceType('license', '#8b5cf6'),
-    makefile: createReferenceType('console', '#334155'),
-    cmakelists: createReferenceType('console', '#334155'),
-    'cmakelists.txt': createReferenceType('console', '#334155'),
-    justfile: createReferenceType('console', '#334155'),
-    procfile: createReferenceType('console', '#334155'),
-    '.env': createReferenceType('settings', '#64748b'),
-    '.env.example': createReferenceType('settings', '#64748b'),
-    '.nvmrc': createReferenceType('nodejs', '#83cd29'),
-    '.tool-versions': createReferenceType('settings', '#64748b'),
-    '.editorconfig': createReferenceType('settings', '#64748b'),
-    '.prettierrc': createReferenceType('settings', '#64748b'),
-    '.eslintrc': createReferenceType('settings', '#64748b'),
-    'biome.json': createReferenceType('settings', '#64748b'),
-    'tsconfig.json': createReferenceType('typescript', '#007acc'),
-    'vite.config.js': createReferenceType('settings', '#646cff'),
-    'vite.config.ts': createReferenceType('settings', '#646cff'),
-  });
-  const REFERENCE_FOLDER_TYPES = Object.freeze({
-    '.github': createReferenceType('folder-github', '#24292f'),
-    '.git': createReferenceType('folder-git', '#f05032'),
-    '.vscode': createReferenceType('folder-vscode', '#007acc'),
-    '.agents': createReferenceType('folder-robot', '#8b5cf6'),
-    '.claude': createReferenceType('folder-robot', '#8b5cf6'),
-    '.cline': createReferenceType('folder-robot', '#8b5cf6'),
-    '.codex': createReferenceType('folder-robot', '#8b5cf6'),
-    '.changeset': createReferenceType('folder-config', '#64748b'),
-    '.husky': createReferenceType('folder-scripts', '#334155'),
-    node_modules: createReferenceType('folder-node', '#83cd29'),
-    docker: createReferenceType('folder-docker', '#2496ed'),
-    docs: createReferenceType('folder-docs', '#e67e22'),
-    test: createReferenceType('folder-test', '#22c55e'),
-    tests: createReferenceType('folder-test', '#22c55e'),
-    e2e: createReferenceType('folder-test', '#22c55e'),
-    evals: createReferenceType('folder-test', '#22c55e'),
-    assets: createReferenceType('folder-images', '#f59e0b'),
-    images: createReferenceType('folder-images', '#f59e0b'),
-    public: createReferenceType('folder-public', '#f59e0b'),
-    src: createReferenceType('folder-src', '#8b5cf6'),
-    lib: createReferenceType('folder-src', '#8b5cf6'),
-    apps: createReferenceType('folder-packages', '#8b5cf6'),
-    packages: createReferenceType('folder-packages', '#8b5cf6'),
-    sdk: createReferenceType('folder-src', '#8b5cf6'),
-    build: createReferenceType('folder-dist', '#64748b'),
-    dist: createReferenceType('folder-dist', '#64748b'),
-    target: createReferenceType('folder-target', '#64748b'),
-    scripts: createReferenceType('folder-scripts', '#334155'),
-    tools: createReferenceType('folder-tools', '#334155'),
-    config: createReferenceType('folder-config', '#64748b'),
-    '.config': createReferenceType('folder-config', '#64748b'),
-  });
-
-  function getFileNameFromLink(link) {
-    try {
-      const pathname = new URL(link.href, location.href).pathname;
-      return decodeURIComponent(pathname.split('/').filter(Boolean).pop() || '').toLowerCase();
-    } catch {
-      return '';
-    }
-  }
-
-  function getFileIconDefinition(fileName, isDirectory) {
-    if (isDirectory) {
-      return FOLDER_ICON_BY_NAME[fileName] || faIcon('fa-solid fa-folder', 'folder');
-    }
-
-    const extension = fileName.includes('.') ? fileName.split('.').pop() : '';
-    return FILE_ICON_BY_EXTENSION[extension]
-      || FILE_ICON_BY_NAME[fileName]
-      || faIcon('fa-solid fa-file');
-  }
-
-  function getIconPresentation(definition, fileName) {
-    const value = `${fileName} ${definition.className}`.toLowerCase();
-    if (definition.kind === 'folder') {
-      const folderColors = {
-        '.github': '#24292f',
-        '.vscode': '#007acc',
-        docs: '#3b82f6',
-        src: '#8b5cf6',
-        lib: '#8b5cf6',
-        tests: '#22c55e',
-        test: '#22c55e',
-        assets: '#f59e0b',
-        images: '#f59e0b',
-        scripts: '#64748b',
-        node_modules: '#83cd29',
-      };
-      return { color: folderColors[fileName] || '#3b82f6', label: '', foreground: '#ffffff' };
-    }
-
-    const presentations = [
-      [/git-alt|\.git/, '#f05032', 'git', '#ffffff'],
-      [/docker/, '#2496ed', 'docker', '#ffffff'],
-      [/npm/, '#cb3837', 'npm', '#ffffff'],
-      [/node-js|\.nvmrc|package/, '#83cd29', 'node', '#17351b'],
-      [/python|\.py$|pyproject/, '#3776ab', 'py', '#ffffff'],
-      [/react|\.jsx$|\.tsx$/, '#61dafb', '⚛', '#123047'],
-      [/fa-js|\.m?js$|\.cjs$/, '#f7df1e', 'JS', '#202124'],
-      [/html5|\.x?html$/, '#e44d26', 'HTML', '#ffffff'],
-      [/css3|\.s?css$|\.less$|\.styl$/, '#1572b6', 'CSS', '#ffffff'],
-      [/vuejs|\.vue$/, '#42b883', 'VUE', '#ffffff'],
-      [/markdown|\.mdx?$|readme|changelog/, '#2563eb', 'MD', '#ffffff'],
-      [/file-pdf|\.pdf$/, '#ef4444', 'PDF', '#ffffff'],
-      [/file-word|\.docx?$|\.odt$|\.rtf$/, '#2563eb', 'W', '#ffffff'],
-      [/file-excel|\.xlsx?$|\.ods$|\.csv$|\.tsv$/, '#16a34a', 'X', '#ffffff'],
-      [/file-powerpoint|\.pptx?$|\.odp$/, '#f97316', 'P', '#ffffff'],
-      [/file-image|\.(png|jpe?g|gif|webp|svg|ico|bmp|tiff|avif)$/, '#a855f7', 'IMG', '#ffffff'],
-      [/file-audio|\.(mp3|wav|ogg|flac)$/, '#ec4899', '♪', '#ffffff'],
-      [/file-video|\.(mp4|mov|webm|avi)$/, '#dc2626', '▶', '#ffffff'],
-      [/file-zipper|\.(zip|gz|tgz|bz2|xz|7z|rar)$/, '#d97706', 'ZIP', '#ffffff'],
-      [/database|\.sql$|\.graphql$|\.gql$/, '#eab308', 'DB', '#422006'],
-      [/terminal|\.sh$|\.bash$|\.zsh$|\.fish$|\.ps1$|\.bat$|\.cmd$|makefile|procfile/, '#334155', '>_', '#ffffff'],
-      [/font|\.(ttf|otf|woff2?)$/, '#7c3aed', 'A', '#ffffff'],
-      [/lock|\.lock$/, '#64748b', 'L', '#ffffff'],
-      [/sliders|gears|\.tool-versions|\.editorconfig|biome|vite\.config/, '#64748b', 'CFG', '#ffffff'],
-      [/scale-balanced|license|notice/, '#8b5cf6', '§', '#ffffff'],
-      [/file-code|\.json$|\.ya?ml$|\.toml$|\.xml$|\.ini$|\.conf$|\.config$|\.env$|\.rs$|\.go$|\.java$|\.php$|\.swift$|\.rb$/, '#0f766e', '</>', '#ffffff'],
-      [/file-lines|\.txt$|\.log$|\.rst$|\.adoc$/, '#64748b', 'TXT', '#ffffff'],
-    ];
-
-    const match = presentations.find(([pattern]) => pattern.test(value));
-    if (match) return { color: match[1], label: match[2], foreground: match[3] };
-    return { color: '#475569', label: 'FILE', foreground: '#ffffff' };
-  }
-
-  function createInlineIcon(definition, fileName) {
-    const type = definition.kind === 'folder' ? 'folder' : 'file';
-    const iconKey = definition.className.split(/\s+/).find((className) => (
-      className.startsWith('fa-') && className !== 'fa-solid' && className !== 'fa-brands'
-    ));
-    const [viewBox, pathData] = FONT_AWESOME_ICON_PATHS[iconKey] || INLINE_ICON_PATHS[type];
-    const presentation = getIconPresentation(definition, fileName);
-    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    icon.setAttribute('viewBox', viewBox);
-    icon.setAttribute('aria-hidden', 'true');
-    icon.setAttribute('focusable', 'false');
-    icon.classList.add('github-tools-file-icon-svg');
-    icon.style.color = presentation.color;
-
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', pathData);
-    icon.appendChild(path);
-
-    if (!FONT_AWESOME_ICON_PATHS[iconKey] && presentation.label) {
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', type === 'folder' ? '256' : '192');
-      label.setAttribute('y', type === 'folder' ? '350' : '384');
-      label.setAttribute('text-anchor', 'middle');
-      label.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
-      label.setAttribute('font-size', presentation.label.length > 3 ? '62' : '86');
-      label.setAttribute('font-weight', '800');
-      label.setAttribute('letter-spacing', '-3');
-      label.setAttribute('fill', presentation.foreground);
-      label.textContent = presentation.label;
-      icon.appendChild(label);
-    }
-
-    return icon;
-  }
-
-  function createFileIcon(definition, fileName) {
+  function createFileIcon(resolution, isDirectory) {
     const wrapper = document.createElement('span');
     wrapper.setAttribute(FILE_ICON_MARKER, '');
-    wrapper.dataset.iconClass = definition.className;
-    wrapper.dataset.iconKind = definition.kind;
     wrapper.setAttribute('aria-hidden', 'true');
+    wrapper.dataset.iconKey = resolution.iconKey;
+    wrapper.dataset.iconType = resolution.iconKey;
+    wrapper.dataset.iconKind = isDirectory ? 'folder' : 'file';
 
-    wrapper.append(createInlineIcon(definition, fileName));
-    return wrapper;
-  }
-
-  function getReferenceFileType(fileName, isDirectory) {
-    if (isDirectory) {
-      return REFERENCE_FOLDER_TYPES[fileName] || createReferenceType('folder-src', '#3b82f6');
-    }
-
-    const extension = fileName.includes('.') ? fileName.split('.').pop() : '';
-    return REFERENCE_FILE_TYPES[extension]
-      || REFERENCE_FILE_NAMES[fileName]
-      || createReferenceType('document', getReferenceFallbackColor(extension || fileName));
-  }
-
-  function getReferenceFallbackColor(value) {
-    let hash = 0;
-    for (let index = 0; index < value.length; index += 1) {
-      hash = ((hash << 5) - hash) + value.charCodeAt(index);
-      hash |= 0;
-    }
-    return `hsl(${Math.abs(hash) % 360} 62% 42%)`;
-  }
-
-  function createReferenceFileIcon(fileName, isDirectory, referenceType, fallbackDefinition) {
-    const icon = document.createElement('img');
-    icon.setAttribute(FILE_ICON_MARKER, '');
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     icon.setAttribute('aria-hidden', 'true');
-    icon.alt = referenceType.icon;
-    icon.dataset.iconType = referenceType.icon;
-    icon.dataset.iconKind = isDirectory ? 'folder' : 'file';
-    icon.src = `${MATERIAL_ICON_BASE}${referenceType.icon}.svg`;
-    icon.addEventListener('error', () => {
-      const fallback = createFileIcon(fallbackDefinition, fileName);
-      fallback.dataset.iconType = referenceType.icon;
-      fallback.dataset.iconKind = isDirectory ? 'folder' : 'file';
-      fallback.dataset.iconFallback = 'true';
-      icon.replaceWith(fallback);
-    }, { once: true });
-    return icon;
+    icon.setAttribute('focusable', 'false');
+    icon.setAttribute('viewBox', '0 0 16 16');
+    icon.setAttribute('width', '16');
+    icon.setAttribute('height', '16');
+    icon.setAttribute('fill', 'currentColor');
+    icon.dataset.iconKey = resolution.iconKey;
+    icon.classList.add('github-tools-file-icon-svg');
+    icon.style.color = resolution.color;
+
+    const paths = GITHUB_TOOLS_ICON_PATHS[resolution.iconKey] || GITHUB_TOOLS_ICON_PATHS.file;
+    paths.forEach((pathData, index) => {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', pathData);
+      if (paths === CODE_PATH && index > 0) {
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', 'currentColor');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
+        path.setAttribute('stroke-width', '1.25');
+      }
+      icon.appendChild(path);
+    });
+    wrapper.append(icon);
+    return wrapper;
   }
 
   function addFileIcons() {
     const repository = getRepository();
     if (!repository) return;
 
-    const entryPrefix = `/${repository.owner}/${repository.repository}/`;
+    const entryPrefix = '/' + repository.owner + '/' + repository.repository + '/';
     const entries = [...document.querySelectorAll('a[href]')].filter((link) => (
       link.pathname.toLowerCase().startsWith(entryPrefix)
       && /\/(?:blob|tree)\//i.test(link.pathname)
     ));
 
-    entries.forEach((entry) => {
-      const link = entry;
+    entries.forEach((link) => {
       const row = link.closest('tr, [role="row"], .Box-row, .js-navigation-item, li');
       if (!row) return;
 
       const nameCell = link.closest('td, [role="gridcell"], [role="cell"]') || link.parentElement;
-      const managedIcon = nameCell.querySelector(`[${FILE_ICON_MARKER}]`);
+      if (!nameCell) return;
+
+      const managedIcon = nameCell.querySelector('[' + FILE_ICON_MARKER + ']');
       const nativeIcon = nameCell.querySelector('svg.octicon-file, svg.octicon-file-directory-fill, svg[class*="icon-directory"]');
       const iconCandidate = managedIcon?.querySelector('svg') || nativeIcon;
-
       const fileName = getFileNameFromLink(link);
       if (!fileName) return;
 
       const isDirectory = /\/tree\//i.test(link.pathname)
+        || managedIcon?.dataset.iconKind === 'folder'
         || iconCandidate?.classList.contains('octicon-file-directory-fill')
         || iconCandidate?.classList.contains('icon-directory');
-      if (isDirectory) return;
+      const resolution = resolveGithubToolsIcon(fileName, isDirectory);
 
-      const referenceType = getReferenceFileType(fileName, isDirectory);
-      const definition = getFileIconDefinition(fileName, isDirectory);
-      const typeKey = isDirectory ? ':folder' : (REFERENCE_FILE_NAMES[fileName] ? fileName : fileName.includes('.') ? fileName.split('.').pop() : fileName);
-      link.setAttribute(FILE_TYPE_MARKER, typeKey);
-      link.style.setProperty('color', referenceType.color, 'important');
+      link.setAttribute(FILE_TYPE_MARKER, isDirectory ? ':folder' : resolution.iconKey);
+      link.style.setProperty('color', resolution.color, 'important');
 
       if (managedIcon
-        && managedIcon.dataset.iconType === referenceType.icon
+        && managedIcon.dataset.iconKey === resolution.iconKey
         && managedIcon.dataset.iconKind === (isDirectory ? 'folder' : 'file')) return;
 
-      const icon = createReferenceFileIcon(fileName, isDirectory, referenceType, definition);
+      const icon = createFileIcon(resolution, isDirectory);
       const oldIcon = managedIcon || nativeIcon;
-
-      if (oldIcon) {
-        oldIcon.replaceWith(icon);
-      } else {
-        link.before(icon);
-      }
+      if (oldIcon) oldIcon.replaceWith(icon);
+      else link.before(icon);
     });
   }
 
