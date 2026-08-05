@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-04-18:00
+// @version      2026-08-04-22:07
 // @description  Adiciona customizações ao GitHub.
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
@@ -28,6 +28,9 @@ const GITHUB_TOOLS_FOLDER_ICONS = Object.freeze({
   '.github': ['folder-github', GITHUB_TOOLS_ICON_COLORS.accent],
   '.git': ['folder-git', GITHUB_TOOLS_ICON_COLORS.danger],
   '.vscode': ['folder-vscode', GITHUB_TOOLS_ICON_COLORS.accent],
+  issue_template: ['folder-config', GITHUB_TOOLS_ICON_COLORS.neutral],
+  pull_request_template: ['folder-config', GITHUB_TOOLS_ICON_COLORS.neutral],
+  workflows: ['folder-config', GITHUB_TOOLS_ICON_COLORS.neutral],
   docs: ['folder-docs', GITHUB_TOOLS_ICON_COLORS.accent],
   test: ['folder-test', GITHUB_TOOLS_ICON_COLORS.success],
   tests: ['folder-test', GITHUB_TOOLS_ICON_COLORS.success],
@@ -47,8 +50,14 @@ const GITHUB_TOOLS_FOLDER_ICONS = Object.freeze({
 const GITHUB_TOOLS_SPECIAL_FILE_ICONS = Object.freeze({
   'package.json': ['npm/package', GITHUB_TOOLS_ICON_COLORS.danger],
   'package-lock.json': ['npm/lock', GITHUB_TOOLS_ICON_COLORS.danger],
+  'bun.lock': ['javascript', GITHUB_TOOLS_ICON_COLORS.attention],
+  'bun.lockb': ['javascript', GITHUB_TOOLS_ICON_COLORS.attention],
   'pnpm-lock.yaml': ['pnpm', GITHUB_TOOLS_ICON_COLORS.accent],
   'yarn.lock': ['yarn', GITHUB_TOOLS_ICON_COLORS.accent],
+  'docker-compose.yml': ['docker', GITHUB_TOOLS_ICON_COLORS.accent],
+  'docker-compose.yaml': ['docker', GITHUB_TOOLS_ICON_COLORS.accent],
+  'compose.yml': ['docker', GITHUB_TOOLS_ICON_COLORS.accent],
+  'compose.yaml': ['docker', GITHUB_TOOLS_ICON_COLORS.accent],
   'dockerfile': ['docker', GITHUB_TOOLS_ICON_COLORS.accent],
   '.dockerignore': ['docker', GITHUB_TOOLS_ICON_COLORS.accent],
   'readme': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
@@ -59,6 +68,11 @@ const GITHUB_TOOLS_SPECIAL_FILE_ICONS = Object.freeze({
   'contributing.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
   'security.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
   'code_of_conduct.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'code_of_conduct': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'pull_request_template.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'issue_template.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'support.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
+  'gemini.md': ['markdown', GITHUB_TOOLS_ICON_COLORS.accent],
   license: ['license', GITHUB_TOOLS_ICON_COLORS.done],
   'license.md': ['license', GITHUB_TOOLS_ICON_COLORS.done],
   notice: ['license', GITHUB_TOOLS_ICON_COLORS.done],
@@ -68,6 +82,61 @@ const GITHUB_TOOLS_SPECIAL_FILE_ICONS = Object.freeze({
   '.gitignore': ['git', GITHUB_TOOLS_ICON_COLORS.danger],
   '.gitattributes': ['git', GITHUB_TOOLS_ICON_COLORS.danger],
   '.gitmodules': ['git', GITHUB_TOOLS_ICON_COLORS.danger],
+  '.git-blame-ignore-revs': ['git', GITHUB_TOOLS_ICON_COLORS.danger],
+  '.mailmap': ['git', GITHUB_TOOLS_ICON_COLORS.danger],
+  gitmessage: ['git', GITHUB_TOOLS_ICON_COLORS.danger],
+  codeowners: ['git', GITHUB_TOOLS_ICON_COLORS.danger],
+  'funding.yml': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'cargo.toml': ['rust', GITHUB_TOOLS_ICON_COLORS.attention],
+  'cargo.lock': ['lock', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'composer.json': ['php', GITHUB_TOOLS_ICON_COLORS.accent],
+  'composer.lock': ['php', GITHUB_TOOLS_ICON_COLORS.accent],
+  'gemfile': ['ruby', GITHUB_TOOLS_ICON_COLORS.danger],
+  'gemfile.lock': ['ruby', GITHUB_TOOLS_ICON_COLORS.danger],
+  rakefile: ['ruby', GITHUB_TOOLS_ICON_COLORS.danger],
+  'go.mod': ['go', GITHUB_TOOLS_ICON_COLORS.accent],
+  'go.sum': ['go', GITHUB_TOOLS_ICON_COLORS.accent],
+  'mix.exs': ['elixir', GITHUB_TOOLS_ICON_COLORS.done],
+  requirements: ['python', GITHUB_TOOLS_ICON_COLORS.accent],
+  'requirements.txt': ['python', GITHUB_TOOLS_ICON_COLORS.accent],
+  'pyproject.toml': ['python', GITHUB_TOOLS_ICON_COLORS.accent],
+  'setup.py': ['python', GITHUB_TOOLS_ICON_COLORS.accent],
+  makefile: ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  justfile: ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  taskfile: ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'taskfile.yml': ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'taskfile.yaml': ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  procfile: ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'cmakelists.txt': ['terminal', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.npmrc': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.yarnrc': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.yarnrc.yml': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.pnpmfile.cjs': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.nvmrc': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.node-version': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.python-version': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.ruby-version': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.tool-versions': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.prettierrc': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.prettierignore': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.eslintrc': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.eslintignore': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.stylelintrc': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.stylelintignore': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'biome.json': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'deno.json': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'deno.jsonc': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'jsconfig.json': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'tsconfig.json': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'renovate.json': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  '.renovaterc': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'dependabot.yml': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'gradle.properties': ['settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  'build.gradle': ['java', GITHUB_TOOLS_ICON_COLORS.danger],
+  'build.gradle.kts': ['kotlin', GITHUB_TOOLS_ICON_COLORS.done],
+  'settings.gradle': ['java', GITHUB_TOOLS_ICON_COLORS.danger],
+  'settings.gradle.kts': ['kotlin', GITHUB_TOOLS_ICON_COLORS.done],
+  'pom.xml': ['java', GITHUB_TOOLS_ICON_COLORS.danger],
 });
 
 const GITHUB_TOOLS_EXTENSION_ICONS = Object.freeze({
@@ -80,6 +149,7 @@ const GITHUB_TOOLS_EXTENSION_ICONS = Object.freeze({
   json: ['json', GITHUB_TOOLS_ICON_COLORS.attention],
   json5: ['json', GITHUB_TOOLS_ICON_COLORS.attention],
   jsonc: ['json', GITHUB_TOOLS_ICON_COLORS.attention],
+  jsonl: ['json', GITHUB_TOOLS_ICON_COLORS.attention],
   html: ['html', GITHUB_TOOLS_ICON_COLORS.danger],
   htm: ['html', GITHUB_TOOLS_ICON_COLORS.danger],
   xhtml: ['html', GITHUB_TOOLS_ICON_COLORS.danger],
@@ -105,7 +175,9 @@ const GITHUB_TOOLS_EXTENSION_ICONS = Object.freeze({
   cpp: ['cpp', GITHUB_TOOLS_ICON_COLORS.accent],
   cxx: ['cpp', GITHUB_TOOLS_ICON_COLORS.accent],
   hpp: ['cpp', GITHUB_TOOLS_ICON_COLORS.accent],
+  cppm: ['cpp', GITHUB_TOOLS_ICON_COLORS.accent],
   swift: ['swift', GITHUB_TOOLS_ICON_COLORS.danger],
+  lean: ['lean', GITHUB_TOOLS_ICON_COLORS.accent],
   sql: ['database', GITHUB_TOOLS_ICON_COLORS.attention],
   graphql: ['graphql', GITHUB_TOOLS_ICON_COLORS.done],
   gql: ['graphql', GITHUB_TOOLS_ICON_COLORS.done],
@@ -178,6 +250,9 @@ function resolveGithubToolsIcon(fileName, isDirectory = false) {
 
   const special = GITHUB_TOOLS_SPECIAL_FILE_ICONS[name];
   if (special) return Object.freeze({ iconKey: special[0], color: special[1] });
+  if (/^dockerfile(?:\.|$)/.test(name)) {
+    return Object.freeze({ iconKey: 'docker', color: GITHUB_TOOLS_ICON_COLORS.accent });
+  }
   if (/^\.git/.test(name)) return Object.freeze({ iconKey: 'git', color: GITHUB_TOOLS_ICON_COLORS.danger });
   if (/^\.env(?:\.|$)/.test(name) || /(?:^|[.-])config(?:[.-]|$)/.test(name)) {
     return Object.freeze({ iconKey: 'settings', color: GITHUB_TOOLS_ICON_COLORS.neutral });
@@ -644,6 +719,7 @@ if (typeof module === 'object' && module.exports) {
     c: CODE_PATH,
     cpp: CODE_PATH,
     swift: CODE_PATH,
+    lean: CODE_PATH,
     yaml: CODE_PATH,
     'npm/package': [PACKAGE_PATH],
     'npm/lock': [PACKAGE_PATH],

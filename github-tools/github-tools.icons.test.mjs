@@ -8,6 +8,9 @@ test('prioriza nomes especiais antes da extensão', () => {
   assert.equal(resolveGithubToolsIcon('Dockerfile').iconKey, 'docker');
   assert.equal(resolveGithubToolsIcon('README.md').iconKey, 'markdown');
   assert.equal(resolveGithubToolsIcon('.gitignore').iconKey, 'git');
+  assert.equal(resolveGithubToolsIcon('gitmessage').iconKey, 'git');
+  assert.equal(resolveGithubToolsIcon('CODEOWNERS').iconKey, 'git');
+  assert.equal(resolveGithubToolsIcon('GEMINI.md').iconKey, 'markdown');
 });
 
 test('resolve extensões semânticas', () => {
@@ -16,6 +19,11 @@ test('resolve extensões semânticas', () => {
   assert.equal(resolveGithubToolsIcon('data.csv').iconKey, 'table');
   assert.equal(resolveGithubToolsIcon('slides.pptx').iconKey, 'presentation');
   assert.equal(resolveGithubToolsIcon('archive.tar.gz').iconKey, 'archive');
+  assert.equal(resolveGithubToolsIcon('compose.yaml').iconKey, 'docker');
+  assert.equal(resolveGithubToolsIcon('Dockerfile.prod').iconKey, 'docker');
+  assert.equal(resolveGithubToolsIcon('Makefile').iconKey, 'terminal');
+  assert.equal(resolveGithubToolsIcon('records.jsonl').iconKey, 'json');
+  assert.equal(resolveGithubToolsIcon('module.cppm').iconKey, 'cpp');
 });
 
 test('resolve pastas conhecidas e mantém fallback neutro', () => {
