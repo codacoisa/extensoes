@@ -955,36 +955,63 @@ if (typeof module === 'object' && module.exports) {
     if (!repository) return null;
 
     const expectedPath = `/${repository.owner}/${repository.repository}`;
-    const candidates = document.querySelectorAll([
-      '#repository-container-header strong a',
-      '#repository-container-header a[href]',
-      '#repo-title-component a[href]',
-      '#repo-title-component h1 a',
-      '[data-testid="repo-title-component"] a',
-      'h1 a',
-    ].join(','));
+    const normalizeHref = (link) => (link.getAttribute('href') || '')
+      .split('#')[0]
+      .split('?')[0]
+      .replace(/\/+$/, '')
+      .toLowerCase();
+    const isCanonicalLink = (link) => {
+      const href = normalizeHref(link);
+      return href === expectedPath || href.endsWith(expectedPath);
+    };
+    const isVisibleLink = (link) => {
+      const rect = link.getBoundingClientRect();
+      const style = window.getComputedStyle(link);
+      return rect.width > 0
+        && rect.height > 0
+        && style.display !== 'none'
+        && style.visibility !== 'hidden';
+    };
+    const isBreadcrumbLink = (link) => Boolean(link.closest([
+      'nav[aria-label*="breadcrumb" i]',
+      '[aria-label*="breadcrumb" i]',
+      '[data-testid*="breadcrumb" i]',
+      '[data-component*="breadcrumb" i]',
+    ].join(',')));
+    const isRepositoryName = (link) => (
+      (link.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() === repository.repository
+    );
+    const isPreferredLink = (link) => (
+      isCanonicalLink(link) && isVisibleLink(link) && !isBreadcrumbLink(link)
+    );
 
-    for (const link of candidates) {
-      const href = (link.getAttribute('href') || '')
-        .split('#')[0]
-        .split('?')[0]
-        .replace(/\/+$/, '')
-        .toLowerCase();
-      if (href === expectedPath || href.endsWith(expectedPath)) return link;
+    const headerSelectors = [
+      '#repo-title-component h1 a[href]',
+      '#repo-title-component a[href]',
+      '[data-testid="repo-title-component"] h1 a[href]',
+      '[data-testid="repo-title-component"] a[href]',
+      '#repository-container-header h1 a[href]',
+      '#repository-container-header h2 a[href]',
+      '#repository-container-header strong a[href]',
+      'h1 a[href]',
+    ];
+
+    for (const selector of headerSelectors) {
+      const candidates = [...document.querySelectorAll(selector)].filter(isPreferredLink);
+      const exactName = candidates.find(isRepositoryName);
+      if (exactName) return exactName;
+      if (candidates[0]) return candidates[0];
     }
 
-    const canonicalLinks = [...document.querySelectorAll('a[href]')].filter((link) => {
-      const href = (link.getAttribute('href') || '')
-        .split('#')[0]
-        .split('?')[0]
-        .replace(/\/+$/, '')
-        .toLowerCase();
-      return href === expectedPath || href.endsWith(expectedPath);
-    });
+    const canonicalLinks = [...document.querySelectorAll('a[href]')].filter(isCanonicalLink);
+    const preferredLinks = canonicalLinks.filter(isPreferredLink);
 
-    return canonicalLinks.find((link) => (
-      (link.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() === repository.repository
-    )) || canonicalLinks[0] || null;
+    return preferredLinks.find(isRepositoryName)
+      || preferredLinks.find((link) => link.closest('h1, h2, h3, [role="heading"]'))
+      || preferredLinks[0]
+      || canonicalLinks.find(isRepositoryName)
+      || canonicalLinks[0]
+      || null;
   }
 
   async function addRepositorySize() {
@@ -1007,7 +1034,10 @@ if (typeof module === 'object' && module.exports) {
       return;
     }
 
-    if (existing && existing.dataset.repoKey === cacheKey && existing.isConnected) return;
+    if (existing && existing.dataset.repoKey === cacheKey && existing.isConnected) {
+      if (existing.previousElementSibling !== nameLink) nameLink.after(existing);
+      return;
+    }
 
     existing?.remove();
 
