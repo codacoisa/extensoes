@@ -6,12 +6,12 @@
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
 // @contributor  Claude <noreply@anthropic.com>
-// @match        https://github.com/*/*
+// @match        https://github.com/*
 // @icon         https://github.githubassets.com/favicons/favicon.svg
 // @grant        none
 // @run-at       document-idle
-// @downloadURL  https://github.com/codacoisa/extensoes/raw/refs/heads/main/github-tools/github-tools.user.js
-// @updateURL    https://github.com/codacoisa/extensoes/raw/refs/heads/main/github-tools/github-tools.user.js
+// @downloadURL  https://raw.githubusercontent.com/codacoisa/extensoes/refs/heads/main/github-tools/github-tools.user.js
+// @updateURL    https://raw.githubusercontent.com/codacoisa/extensoes/refs/heads/main/github-tools/github-tools.meta.js
 // ==/UserScript==
 
 const GITHUB_TOOLS_ICON_COLORS = Object.freeze({
@@ -280,6 +280,10 @@ if (typeof module === 'object' && module.exports) {
   'use strict';
   if (typeof document === 'undefined') return;
 
+  const SCRIPT_MARKER = 'data-github-tools-initialized';
+  if (document.documentElement.hasAttribute(SCRIPT_MARKER)) return;
+  document.documentElement.setAttribute(SCRIPT_MARKER, '');
+
   const BUTTON_MARKER = 'data-fork-finder-button';
   const CLONE_BUTTON_MARKER = 'data-github-tools-clone-button';
   const FILE_ICON_MARKER = 'data-github-tools-file-icon';
@@ -370,6 +374,26 @@ if (typeof module === 'object' && module.exports) {
       owner: owner.toLowerCase(),
       repository: repository.toLowerCase(),
     };
+  }
+
+  function getFileNameFromLink(link) {
+    const href = link?.getAttribute('href') || link?.href || '';
+
+    try {
+      const url = new URL(href, location.origin);
+      const segments = url.pathname.split('/').filter(Boolean);
+      const routeIndex = segments.findIndex((segment) => /^(?:blob|tree)$/i.test(segment));
+
+      if (routeIndex >= 0 && segments.length > routeIndex + 2) {
+        return decodeURIComponent(segments.at(-1));
+      }
+    } catch {
+    }
+
+    return (link?.textContent
+      || link?.getAttribute('aria-label')
+      || link?.getAttribute('title')
+      || '').replace(/\s+/g, ' ').trim();
   }
 
   function isRepositoryRootOrTreeRoute() {
@@ -949,7 +973,18 @@ if (typeof module === 'object' && module.exports) {
       if (href === expectedPath || href.endsWith(expectedPath)) return link;
     }
 
-    return null;
+    const canonicalLinks = [...document.querySelectorAll('a[href]')].filter((link) => {
+      const href = (link.getAttribute('href') || '')
+        .split('#')[0]
+        .split('?')[0]
+        .replace(/\/+$/, '')
+        .toLowerCase();
+      return href === expectedPath || href.endsWith(expectedPath);
+    });
+
+    return canonicalLinks.find((link) => (
+      (link.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() === repository.repository
+    )) || canonicalLinks[0] || null;
   }
 
   async function addRepositorySize() {

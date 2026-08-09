@@ -6,7 +6,7 @@ Coleção de userscripts não jurídicos da organização CodaCoisa. Cada extens
 
 | Pasta | Finalidade |
 | --- | --- |
-| [`github-tools`](github-tools/) | Adiciona customizações ao GitHub. |
+| [`github-tools`](github-tools/) | Adiciona customizações ao GitHub. [Instalar](https://raw.githubusercontent.com/codacoisa/extensoes/refs/heads/main/github-tools/github-tools.user.js) |
 | [`opensubtitles-brazilian`](opensubtitles-brazilian/) | Prioriza legendas em português brasileiro no OpenSubtitles. |
 | [`psa-telegram`](psa-telegram/) | Abre links do Telegram a partir do PSA. |
 

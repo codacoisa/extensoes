@@ -4,12 +4,12 @@
 
 This repository contains independent browser userscripts. Each active extension lives in its own directory:
 
-- `github-tools/` customizes GitHub and includes its Node test file.
+- `github-tools/` customizes GitHub, with metadata/update information in `github-tools.meta.js`, runtime logic in `github-tools.user.js`, and a Node test file.
 - `opensubtitles-brazilian/` prioritizes Brazilian Portuguese subtitles on OpenSubtitles.
 - `psa-telegram/` adds Telegram links to PSA pages.
 - `arquivo/` contains archived, unsupported scripts; do not add new work there.
 
-The root `README.md` documents the collection. Userscript metadata and runtime code are kept together in each `.user.js` file; there is no shared application or build output directory.
+The root `README.md` documents the collection. Each active userscript exposes an installable metadata bootstrap and keeps runtime logic in a separate file; there is no shared application or build output directory.
 
 ## Build, Test, and Development Commands
 
