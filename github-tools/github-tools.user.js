@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Tools
 // @namespace    https://github.com/codacoisa/extensoes/tree/main/github-tools
-// @version      2026-08-09-00:29
+// @version      2026-08-10-19:40
 // @description  Adiciona customizações ao GitHub.
 // @author       lourencosv
 // @contributor  Codex <codex@openai.com>
@@ -22,29 +22,6 @@ const GITHUB_TOOLS_ICON_COLORS = Object.freeze({
   done: 'var(--fgColor-done, #8250df)',
   success: 'var(--fgColor-success, #1a7f37)',
   open: 'var(--fgColor-open, #1f883d)',
-});
-
-const GITHUB_TOOLS_FOLDER_ICONS = Object.freeze({
-  '.github': ['folder-github', GITHUB_TOOLS_ICON_COLORS.accent],
-  '.git': ['folder-git', GITHUB_TOOLS_ICON_COLORS.danger],
-  '.vscode': ['folder-vscode', GITHUB_TOOLS_ICON_COLORS.accent],
-  issue_template: ['folder-config', GITHUB_TOOLS_ICON_COLORS.neutral],
-  pull_request_template: ['folder-config', GITHUB_TOOLS_ICON_COLORS.neutral],
-  workflows: ['folder-config', GITHUB_TOOLS_ICON_COLORS.neutral],
-  docs: ['folder-docs', GITHUB_TOOLS_ICON_COLORS.accent],
-  test: ['folder-test', GITHUB_TOOLS_ICON_COLORS.success],
-  tests: ['folder-test', GITHUB_TOOLS_ICON_COLORS.success],
-  e2e: ['folder-test', GITHUB_TOOLS_ICON_COLORS.success],
-  assets: ['folder-images', GITHUB_TOOLS_ICON_COLORS.attention],
-  images: ['folder-images', GITHUB_TOOLS_ICON_COLORS.attention],
-  public: ['folder-public', GITHUB_TOOLS_ICON_COLORS.attention],
-  src: ['folder-src', GITHUB_TOOLS_ICON_COLORS.done],
-  lib: ['folder-src', GITHUB_TOOLS_ICON_COLORS.done],
-  packages: ['folder-packages', GITHUB_TOOLS_ICON_COLORS.done],
-  scripts: ['folder-scripts', GITHUB_TOOLS_ICON_COLORS.neutral],
-  tools: ['folder-tools', GITHUB_TOOLS_ICON_COLORS.neutral],
-  config: ['folder-config', GITHUB_TOOLS_ICON_COLORS.neutral],
-  '.config': ['folder-config', GITHUB_TOOLS_ICON_COLORS.neutral],
 });
 
 const GITHUB_TOOLS_SPECIAL_FILE_ICONS = Object.freeze({
@@ -233,6 +210,109 @@ const GITHUB_TOOLS_EXTENSION_ICONS = Object.freeze({
   lock: ['lock', GITHUB_TOOLS_ICON_COLORS.neutral],
 });
 
+// Broad families keep the resolver useful for uncommon GitHub/Linguist file types.
+// Unknown extensions still receive a labelled fallback instead of pretending to be
+// one of the known formats.
+const GITHUB_TOOLS_EXTENSION_GROUPS = Object.freeze([
+  [['jsx'], 'react', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['tsx'], 'react_ts', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['coffee', 'litcoffee'], 'coffee', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['elm'], 'elm', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['sol'], 'solidity', GITHUB_TOOLS_ICON_COLORS.neutral],
+  [['wasm', 'wat'], 'webassembly', GITHUB_TOOLS_ICON_COLORS.done],
+  [['cs', 'csx'], 'csharp', GITHUB_TOOLS_ICON_COLORS.done],
+  [['dart'], 'dart', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['lua'], 'lua', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['pl', 'pm', 'pod', 't'], 'perl', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['r', 'rmd'], 'r', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['scala', 'sc'], 'scala', GITHUB_TOOLS_ICON_COLORS.danger],
+  [['groovy', 'gvy', 'gy', 'gsh'], 'groovy', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['ex', 'exs', 'eex', 'heex', 'leex'], 'elixir', GITHUB_TOOLS_ICON_COLORS.done],
+  [['erl', 'hrl'], 'erlang', GITHUB_TOOLS_ICON_COLORS.danger],
+  [['fs', 'fsi', 'fsx', 'fsscript'], 'fsharp', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['vb', 'vbs'], 'visualstudio', GITHUB_TOOLS_ICON_COLORS.done],
+  [['hs', 'lhs'], 'haskell', GITHUB_TOOLS_ICON_COLORS.done],
+  [['clj', 'cljs', 'cljc', 'edn'], 'clojure', GITHUB_TOOLS_ICON_COLORS.done],
+  [['ml', 'mli', 'mll', 'mly'], 'ocaml', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['nim', 'nims', 'nimble'], 'nim', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['zig', 'zon'], 'zig', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['jl'], 'julia', GITHUB_TOOLS_ICON_COLORS.done],
+  [['v', 'vsh'], 'vlang', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['d', 'di'], 'd', GITHUB_TOOLS_ICON_COLORS.danger],
+  [['asm', 's', 'inc'], 'assembly', GITHUB_TOOLS_ICON_COLORS.neutral],
+  [['m', 'mm'], 'objective-c', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['pas', 'pp', 'p'], 'delphi', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['cob', 'cbl', 'cpy'], 'cobol', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['f', 'for', 'f77', 'f90', 'f95', 'f03', 'f08'], 'fortran', GITHUB_TOOLS_ICON_COLORS.done],
+  [['adb', 'ads'], 'ada', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['rkt', 'scm', 'ss'], 'scheme', GITHUB_TOOLS_ICON_COLORS.danger],
+  [['tex', 'sty', 'cls', 'bib'], 'tex', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['tf', 'tfvars', 'hcl'], 'terraform', GITHUB_TOOLS_ICON_COLORS.done],
+  [['proto'], 'protobuf', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['thrift'], 'code', GITHUB_TOOLS_ICON_COLORS.neutral],
+  [['avsc', 'avdl', 'avpr'], 'avro', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['prisma'], 'prisma', GITHUB_TOOLS_ICON_COLORS.neutral],
+  [['gd', 'gdshader', 'tscn', 'tres'], 'godot', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['shader', 'glsl', 'vert', 'frag', 'geom', 'tesc', 'tese', 'comp', 'hlsl', 'wgsl'], 'shader', GITHUB_TOOLS_ICON_COLORS.done],
+  [['ipynb'], 'jupyter', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['qmd'], 'quarto', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['vue'], 'vue', GITHUB_TOOLS_ICON_COLORS.open],
+  [['svelte'], 'svelte', GITHUB_TOOLS_ICON_COLORS.danger],
+  [['astro'], 'astro', GITHUB_TOOLS_ICON_COLORS.danger],
+  [['hbs', 'handlebars', 'mustache'], 'handlebars', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['ejs'], 'ejs', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['pug', 'jade'], 'pug', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['twig'], 'twig', GITHUB_TOOLS_ICON_COLORS.open],
+  [['liquid'], 'liquid', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['njk', 'nunjucks'], 'nunjucks', GITHUB_TOOLS_ICON_COLORS.open],
+  [['razor', 'cshtml'], 'razor', GITHUB_TOOLS_ICON_COLORS.done],
+  [['styl', 'stylus'], 'stylus', GITHUB_TOOLS_ICON_COLORS.open],
+  [['pcss', 'postcss'], 'postcss', GITHUB_TOOLS_ICON_COLORS.danger],
+  [['graphqls'], 'graphql', GITHUB_TOOLS_ICON_COLORS.done],
+  [['xsd', 'xsl', 'xslt', 'dtd', 'plist', 'resx'], 'xml', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['properties', 'cfg', 'cnf', 'prefs'], 'settings', GITHUB_TOOLS_ICON_COLORS.neutral],
+  [['editorconfig'], 'editorconfig', GITHUB_TOOLS_ICON_COLORS.neutral],
+  [['dotenv'], 'tune', GITHUB_TOOLS_ICON_COLORS.neutral],
+  [['diff', 'patch', 'rej'], 'diff', GITHUB_TOOLS_ICON_COLORS.neutral],
+  [['http', 'rest'], 'http', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['rego'], 'opa', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['cue'], 'cue', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['feature'], 'cucumber', GITHUB_TOOLS_ICON_COLORS.open],
+  [['robot'], 'robot', GITHUB_TOOLS_ICON_COLORS.done],
+  [['psm1', 'psd1'], 'powershell', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['nu'], 'console', GITHUB_TOOLS_ICON_COLORS.open],
+  [['fish'], 'console', GITHUB_TOOLS_ICON_COLORS.open],
+  [['awk'], 'console', GITHUB_TOOLS_ICON_COLORS.neutral],
+  [['dockerignore'], 'docker', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['adoc', 'asciidoc'], 'asciidoc', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['org'], 'org', GITHUB_TOOLS_ICON_COLORS.open],
+  [['rtf', 'odt', 'pages', 'epub', 'mobi'], 'document', GITHUB_TOOLS_ICON_COLORS.accent],
+  [['xlsm', 'xlsb', 'numbers'], 'table', GITHUB_TOOLS_ICON_COLORS.success],
+  [['key'], 'powerpoint', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['ico', 'bmp', 'tif', 'tiff', 'avif', 'heic', 'heif'], 'image', GITHUB_TOOLS_ICON_COLORS.done],
+  [['psd', 'ai', 'xd', 'sketch', 'fig'], 'image', GITHUB_TOOLS_ICON_COLORS.done],
+  [['raw', 'cr2', 'nef', 'dng'], 'image', GITHUB_TOOLS_ICON_COLORS.done],
+  [['ogg', 'oga', 'flac', 'aac', 'm4a', 'wma', 'opus', 'mid', 'midi'], 'audio', GITHUB_TOOLS_ICON_COLORS.done],
+  [['webm', 'avi', 'mkv', 'm4v', 'wmv', 'flv', 'mpeg', 'mpg'], 'video', GITHUB_TOOLS_ICON_COLORS.done],
+  [['tgz', 'bz', 'bz2', 'xz', 'lz', 'lzma', 'zst', '7z', 'rar', 'cab', 'iso', 'dmg', 'jar', 'war', 'ear'], 'zip', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['eot'], 'font', GITHUB_TOOLS_ICON_COLORS.done],
+  [['pem', 'crt', 'cer', 'der', 'p12', 'pfx', 'pub', 'asc', 'gpg'], 'certificate', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['db', 'sqlite', 'sqlite3', 'mdb', 'accdb'], 'database', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['parquet', 'avro', 'orc', 'feather'], 'database', GITHUB_TOOLS_ICON_COLORS.attention],
+  [['map', 'geojson', 'topojson', 'kml', 'gpx'], 'map', GITHUB_TOOLS_ICON_COLORS.open],
+  [['blend', 'fbx', 'obj', 'stl', '3ds', 'dae', 'gltf', 'glb'], '3d', GITHUB_TOOLS_ICON_COLORS.done],
+  [['dwg', 'dxf', 'step', 'stp', 'iges', 'igs'], '3d', GITHUB_TOOLS_ICON_COLORS.done],
+  [['apk', 'aab', 'ipa', 'appimage', 'deb', 'rpm', 'msi', 'exe'], 'binary', GITHUB_TOOLS_ICON_COLORS.neutral],
+  [['dll', 'so', 'dylib', 'a', 'lib', 'o', 'obj', 'class', 'pyc', 'pyo'], 'binary', GITHUB_TOOLS_ICON_COLORS.neutral],
+  [['min.js', 'min.css', 'bundle.js', 'map'], 'javascript', GITHUB_TOOLS_ICON_COLORS.attention],
+]);
+
+const GITHUB_TOOLS_EXTENDED_EXTENSION_ICONS = Object.freeze(Object.fromEntries(
+  GITHUB_TOOLS_EXTENSION_GROUPS.flatMap(([extensions, iconKey, color]) => (
+    extensions.map((extension) => [extension, [iconKey, color]])
+  )),
+));
+
 function normalizeGithubToolsEntryName(value) {
   return String(value || '').trim().replace(/\\/g, '/').split('/').pop().toLowerCase();
 }
@@ -241,34 +321,39 @@ function resolveGithubToolsIcon(fileName, isDirectory = false) {
   const name = normalizeGithubToolsEntryName(fileName);
 
   if (isDirectory) {
-    const folder = GITHUB_TOOLS_FOLDER_ICONS[name];
     return Object.freeze({
-      iconKey: folder?.[0] || 'folder',
-      color: folder?.[1] || GITHUB_TOOLS_ICON_COLORS.neutral,
+      iconKey: 'folder',
+      color: null,
+      extension: '',
     });
   }
 
   const special = GITHUB_TOOLS_SPECIAL_FILE_ICONS[name];
-  if (special) return Object.freeze({ iconKey: special[0], color: special[1] });
+  if (special) return Object.freeze({ iconKey: special[0], color: special[1], extension: '' });
   if (/^dockerfile(?:\.|$)/.test(name)) {
-    return Object.freeze({ iconKey: 'docker', color: GITHUB_TOOLS_ICON_COLORS.accent });
+    return Object.freeze({ iconKey: 'docker', color: GITHUB_TOOLS_ICON_COLORS.accent, extension: '' });
   }
-  if (/^\.git/.test(name)) return Object.freeze({ iconKey: 'git', color: GITHUB_TOOLS_ICON_COLORS.danger });
+  if (/^\.git/.test(name)) return Object.freeze({ iconKey: 'git', color: GITHUB_TOOLS_ICON_COLORS.danger, extension: '' });
   if (/^\.env(?:\.|$)/.test(name) || /(?:^|[.-])config(?:[.-]|$)/.test(name)) {
-    return Object.freeze({ iconKey: 'settings', color: GITHUB_TOOLS_ICON_COLORS.neutral });
+    return Object.freeze({ iconKey: 'settings', color: GITHUB_TOOLS_ICON_COLORS.neutral, extension: '' });
   }
   if (/^(?:readme|changelog|agents|contributing|security)(?:\.|$)/.test(name)) {
-    return Object.freeze({ iconKey: 'markdown', color: GITHUB_TOOLS_ICON_COLORS.accent });
+    return Object.freeze({ iconKey: 'markdown', color: GITHUB_TOOLS_ICON_COLORS.accent, extension: '' });
   }
   if (/^(?:license|notice)(?:\.|$)/.test(name)) {
-    return Object.freeze({ iconKey: 'license', color: GITHUB_TOOLS_ICON_COLORS.done });
+    return Object.freeze({ iconKey: 'license', color: GITHUB_TOOLS_ICON_COLORS.done, extension: '' });
   }
 
-  const extension = name.includes('.') ? name.split('.').pop() : '';
-  const typed = GITHUB_TOOLS_EXTENSION_ICONS[extension];
+  const extensionParts = name.split('.').filter(Boolean);
+  const compoundExtension = extensionParts.length > 1 ? extensionParts.slice(-2).join('.') : '';
+  const extension = extensionParts.at(-1) || name.replace(/^\.+/, '');
+  const typed = GITHUB_TOOLS_EXTENDED_EXTENSION_ICONS[compoundExtension]
+    || GITHUB_TOOLS_EXTENDED_EXTENSION_ICONS[extension]
+    || GITHUB_TOOLS_EXTENSION_ICONS[extension];
   return Object.freeze({
     iconKey: typed?.[0] || 'file',
     color: typed?.[1] || GITHUB_TOOLS_ICON_COLORS.neutral,
+    extension,
   });
 }
 
@@ -361,6 +446,14 @@ if (typeof module === 'object' && module.exports) {
     `  min-width: 16px;`,
     `  min-height: 16px;`,
     `  fill: currentColor;`,
+    `}`,
+    `span[${FILE_ICON_MARKER}] .github-tools-file-icon-image {`,
+    `  display: block;`,
+    `  width: 16px;`,
+    `  height: 16px;`,
+    `  min-width: 16px;`,
+    `  min-height: 16px;`,
+    `  object-fit: contain;`,
     `}`,
   ].join('\n');
   document.head.appendChild(style);
@@ -769,13 +862,31 @@ if (typeof module === 'object' && module.exports) {
     document: [FILE_PATH],
   });
 
-  function createFileIcon(resolution, isDirectory) {
+  // Pin the icon set so upstream renames cannot silently break installed scripts.
+  const MATERIAL_ICON_BASE = 'https://raw.githubusercontent.com/material-extensions/vscode-material-icon-theme/5bcb461d8f1d3dc9b0f9e733720f776824380338/icons/';
+  const MATERIAL_ICON_ALIASES = Object.freeze({
+    'npm/package': 'npm',
+    'npm/lock': 'npm',
+    archive: 'zip',
+    avro: 'database',
+    binary: 'disc',
+    code: 'document',
+    delphi: 'pascal',
+    map: 'roadmap',
+    org: 'document',
+    presentation: 'powerpoint',
+    protobuf: 'proto',
+    terminal: 'console',
+  });
+
+  function createFallbackFileIcon(resolution, fileName) {
     const wrapper = document.createElement('span');
     wrapper.setAttribute(FILE_ICON_MARKER, '');
     wrapper.setAttribute('aria-hidden', 'true');
     wrapper.dataset.iconKey = resolution.iconKey;
     wrapper.dataset.iconType = resolution.iconKey;
-    wrapper.dataset.iconKind = isDirectory ? 'folder' : 'file';
+    wrapper.dataset.iconKind = 'file';
+    wrapper.dataset.iconSource = 'fallback';
 
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     icon.setAttribute('aria-hidden', 'true');
@@ -801,6 +912,53 @@ if (typeof module === 'object' && module.exports) {
       }
       icon.appendChild(path);
     });
+
+    if (resolution.iconKey === 'file' && resolution.extension) {
+      const badge = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      badge.setAttribute('x', '2.5');
+      badge.setAttribute('y', '8');
+      badge.setAttribute('width', '11');
+      badge.setAttribute('height', '6');
+      badge.setAttribute('rx', '1');
+      badge.setAttribute('fill', 'currentColor');
+      icon.appendChild(badge);
+
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', '8');
+      label.setAttribute('y', '12.5');
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('font-family', 'system-ui, sans-serif');
+      label.setAttribute('font-size', resolution.extension.length > 3 ? '3.2' : '4');
+      label.setAttribute('font-weight', '700');
+      label.setAttribute('fill', 'var(--bgColor-default, #ffffff)');
+      label.textContent = resolution.extension.slice(0, 4).toUpperCase();
+      icon.appendChild(label);
+    }
+
+    wrapper.append(icon);
+    return wrapper;
+  }
+
+  function createFileIcon(resolution, fileName) {
+    if (resolution.iconKey === 'file') return createFallbackFileIcon(resolution, fileName);
+
+    const wrapper = document.createElement('span');
+    wrapper.setAttribute(FILE_ICON_MARKER, '');
+    wrapper.setAttribute('aria-hidden', 'true');
+    wrapper.dataset.iconKey = resolution.iconKey;
+    wrapper.dataset.iconType = resolution.iconKey;
+    wrapper.dataset.iconKind = 'file';
+    wrapper.dataset.iconSource = 'material';
+
+    const icon = document.createElement('img');
+    const materialIcon = MATERIAL_ICON_ALIASES[resolution.iconKey] || resolution.iconKey;
+    icon.className = 'github-tools-file-icon-image';
+    icon.alt = '';
+    icon.decoding = 'async';
+    icon.src = `${MATERIAL_ICON_BASE}${encodeURIComponent(materialIcon)}.svg`;
+    icon.addEventListener('error', () => {
+      wrapper.replaceWith(createFallbackFileIcon(resolution, fileName));
+    }, { once: true });
     wrapper.append(icon);
     return wrapper;
   }
@@ -823,7 +981,9 @@ if (typeof module === 'object' && module.exports) {
       if (!nameCell) return;
 
       const managedIcon = nameCell.querySelector('[' + FILE_ICON_MARKER + ']');
-      const nativeIcon = nameCell.querySelector('svg.octicon-file, svg.octicon-file-directory-fill, svg[class*="icon-directory"]');
+      const nativeIcon = nameCell.querySelector('svg.octicon-file, svg.octicon-file-directory-fill, svg[class*="icon-directory"], svg[class*="icon-file"]')
+        || nameCell.querySelector('svg');
+      if (!managedIcon && !nativeIcon) return;
       const iconCandidate = managedIcon?.querySelector('svg') || nativeIcon;
       const fileName = getFileNameFromLink(link);
       if (!fileName) return;
@@ -835,13 +995,21 @@ if (typeof module === 'object' && module.exports) {
       const resolution = resolveGithubToolsIcon(fileName, isDirectory);
 
       link.setAttribute(FILE_TYPE_MARKER, isDirectory ? ':folder' : resolution.iconKey);
+
+      // The reference script deliberately leaves folders alone. Preserve both
+      // GitHub's native folder icon and its theme-aware link color.
+      if (isDirectory) {
+        link.style.removeProperty('color');
+        return;
+      }
+
       link.style.setProperty('color', resolution.color, 'important');
 
       if (managedIcon
         && managedIcon.dataset.iconKey === resolution.iconKey
-        && managedIcon.dataset.iconKind === (isDirectory ? 'folder' : 'file')) return;
+        && managedIcon.dataset.iconKind === 'file') return;
 
-      const icon = createFileIcon(resolution, isDirectory);
+      const icon = createFileIcon(resolution, fileName);
       const oldIcon = managedIcon || nativeIcon;
       if (oldIcon) oldIcon.replaceWith(icon);
       else link.before(icon);

@@ -14,7 +14,7 @@ test('prioriza nomes especiais antes da extensão', () => {
 });
 
 test('resolve extensões semânticas', () => {
-  assert.equal(resolveGithubToolsIcon('src/app.tsx').iconKey, 'react');
+  assert.equal(resolveGithubToolsIcon('src/app.tsx').iconKey, 'react_ts');
   assert.equal(resolveGithubToolsIcon('schema.graphql').iconKey, 'graphql');
   assert.equal(resolveGithubToolsIcon('data.csv').iconKey, 'table');
   assert.equal(resolveGithubToolsIcon('slides.pptx').iconKey, 'presentation');
@@ -26,11 +26,24 @@ test('resolve extensões semânticas', () => {
   assert.equal(resolveGithubToolsIcon('module.cppm').iconKey, 'cpp');
 });
 
-test('resolve pastas conhecidas e mantém fallback neutro', () => {
-  assert.equal(resolveGithubToolsIcon('src', true).iconKey, 'folder-src');
-  assert.equal(resolveGithubToolsIcon('/owner/repo/tree/main/tests', true).iconKey, 'folder-test');
+test('preserva os ícones e as cores nativas de todas as pastas', () => {
+  assert.equal(resolveGithubToolsIcon('src', true).iconKey, 'folder');
+  assert.equal(resolveGithubToolsIcon('src', true).color, null);
+  assert.equal(resolveGithubToolsIcon('/owner/repo/tree/main/tests', true).iconKey, 'folder');
+  assert.equal(resolveGithubToolsIcon('/owner/repo/tree/main/tests', true).color, null);
   assert.equal(resolveGithubToolsIcon('unknown-folder', true).iconKey, 'folder');
+});
+
+test('cobre famílias amplas e mantém fallback por extensão', () => {
+  assert.equal(resolveGithubToolsIcon('notebook.ipynb').iconKey, 'jupyter');
+  assert.equal(resolveGithubToolsIcon('main.tf').iconKey, 'terraform');
+  assert.equal(resolveGithubToolsIcon('model.blend').iconKey, '3d');
+  assert.equal(resolveGithubToolsIcon('certificate.pem').iconKey, 'certificate');
+  assert.equal(resolveGithubToolsIcon('database.sqlite3').iconKey, 'database');
   assert.equal(resolveGithubToolsIcon('unknown.extension').iconKey, 'file');
+  assert.equal(resolveGithubToolsIcon('unknown.extension').extension, 'extension');
+  assert.equal(resolveGithubToolsIcon('.unknown').extension, 'unknown');
+  assert.equal(resolveGithubToolsIcon('no-extension').extension, 'no-extension');
 });
 
 test('normaliza nomes com caminho, barras e maiúsculas', () => {
