@@ -1,38 +1,18 @@
 // ==UserScript==
 // @name         Botão para Telegram na PSARips
 // @namespace    botao-telegram-bot.user.js
-// @version      2.0
+// @version      2026-09-25-18:15
 // @icon         https://img.icons8.com/?size=100&id=ZjsLJhlQchzI&format=png&color=000000
-// @description  Abre a URL atual no bot do Telegram pelo aplicativo ou pela Web.
-// @author       lourencosv (GPT)
+// @description  Abre no Telegram links visitados a partir do PSA.
+// @author       lourencosv
+// @contributor  Codex <codex@openai.com>
 // @license      CC BY-NC 4.0
-// @updateURL    https://raw.githubusercontent.com/codacoisa/extensoes/refs/heads/main/psa-telegram/botao-telegram-bot.user.js
+// @updateURL    https://raw.githubusercontent.com/codacoisa/extensoes/refs/heads/main/psa-telegram/botao-telegram-bot.meta.js
 // @downloadURL  https://raw.githubusercontent.com/codacoisa/extensoes/refs/heads/main/psa-telegram/botao-telegram-bot.user.js
-// @match        *://*.psa.wf/*
-// @match        *://*.tpi.li/*
-// @match        *://*.ouo.io/*
-// @match        *://*.starkroboticsfrc.com/*
-// @match        *://*.ravellawfirm.com/*
-// @match        *://*.fridfullresa.org/*
-// @match        *://*.cashgrowth.online/*
-// @match        *://*.exeygo.com/*
-// @match        *://*.exe-links.com/*
-// @match        *://*.exe.io/*
-// @match        *://*.uiil.ink/*
-// @match        *://*.shrinkme.click/*
-// @match        *://*.themezon.net/*
-// @match        *://*.mrproblogger.com/*
-// @match        *://*.fc.lc/*
-// @match        *://*.fc-lc.xyz/*
-// @match        *://*.jobzhub.store/*
-// @match        *://*.shrtslug.biz/*
-// @match        *://*.oii.la/*
-// @match        *://*.shortxlinks.com/*
-// @match        *://*.bitcotrade.net/*
-// @match        *://*.mobiend.com/*
-// @match        *://*.adurl.io/*
+// @match        *://*/*
 // @run-at       document-end
-// @grant        none
+// @grant        GM_getTab
+// @grant        GM_saveTab
 // ==/UserScript==
 
 (function () {
@@ -42,27 +22,117 @@
 
   const BOT_USERNAME = 'Nick_Bypass_Bot';
   const PANEL_ID = 'psa-telegram-panel';
+  const STYLE_ID = 'psa-telegram-styles';
+  const TAB_STATE_KEY = 'psaTelegramRedirect';
+  const REDIRECT_STATE_TTL_MS = 15_000;
 
   const ICON_PATHS = {
     app: 'M21.5 4.5 18.4 19a1.1 1.1 0 0 1-1.6.7l-4.2-2.8-2.1 2a.95.95 0 0 1-1.6-.67l.36-4.45 8.1-7.3a.5.5 0 0 0-.64-.76l-10.02 6.32-4.28-1.38a1.06 1.06 0 0 1 .03-2.03L20 3.3a1.17 1.17 0 0 1 1.5 1.2Z',
     web: 'M12 2a10 10 0 1 0 10 10A10.01 10.01 0 0 0 12 2Zm6.93 9h-3.01a15.87 15.87 0 0 0-1.38-5.05A8.03 8.03 0 0 1 18.93 11ZM12 4.06c.93 1.14 1.82 3.18 2.17 5.94H9.83C10.18 7.24 11.07 5.2 12 4.06ZM4.07 13h3.01a15.87 15.87 0 0 0 1.38 5.05A8.03 8.03 0 0 1 4.07 13Zm3.01-2H4.07a8.03 8.03 0 0 1 4.39-5.05A15.87 15.87 0 0 0 7.08 11ZM12 19.94c-.93-1.14-1.82-3.18-2.17-5.94h4.34c-.35 2.76-1.24 4.8-2.17 5.94ZM14.39 13H9.61a14.02 14.02 0 0 1 0-2h4.78a14.02 14.02 0 0 1 0 2Zm.15 5.05A15.87 15.87 0 0 0 15.92 13h3.01a8.03 8.03 0 0 1-4.39 5.05Z'
   };
 
-  function getCurrentUrl() {
-    const url = new URL(window.location.href);
-    const isTpi = url.hostname === 'tpi.li' || url.hostname.endsWith('.tpi.li');
+  function isPsaHostname(hostname) {
+    const normalizedHostname = hostname.toLowerCase();
+    return normalizedHostname === 'psa.wf' || normalizedHostname.endsWith('.psa.wf');
+  }
 
-    if (isTpi) {
-      const filteredParams = new URLSearchParams();
+  function isPsaUrl(value) {
+    if (!value) return false;
 
-      for (const [key, value] of url.searchParams) {
-        if (key.toLowerCase() === 'src' && value.toUpperCase() === 'PSA') continue;
-        filteredParams.append(key, value);
-      }
+    try {
+      return isPsaHostname(new URL(value).hostname);
+    } catch {
+      return false;
+    }
+  }
 
-      url.search = filteredParams.toString();
+  function getTab(callback) {
+    if (typeof GM_getTab !== 'function') {
+      callback(null);
+      return;
     }
 
+    try {
+      GM_getTab((tab) => callback(tab || null));
+    } catch {
+      callback(null);
+    }
+  }
+
+  function saveTab(tab) {
+    if (typeof GM_saveTab !== 'function') return;
+
+    try {
+      GM_saveTab(tab);
+    } catch {
+      // Tab-scoped tracking is optional; document.referrer remains the fallback.
+    }
+  }
+
+  function rememberPsaNavigation(event, currentTab) {
+    if (
+      !event.isTrusted ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) return;
+    if (!(event.target instanceof Element)) return;
+
+    const anchor = event.target.closest('a[href]');
+    if (!anchor) return;
+
+    const target = (anchor.target || '').toLowerCase();
+    if (!['', '_self', '_top', '_parent'].includes(target)) return;
+
+    let destination;
+    try {
+      destination = new URL(anchor.href, window.location.href);
+    } catch {
+      return;
+    }
+
+    if (!['http:', 'https:'].includes(destination.protocol) || isPsaHostname(destination.hostname)) return;
+
+    function saveRedirectMarker(tab) {
+      if (!tab) return;
+
+      tab[TAB_STATE_KEY] = {
+        source: window.location.origin,
+        expiresAt: Date.now() + REDIRECT_STATE_TTL_MS
+      };
+      saveTab(tab);
+    }
+
+    if (currentTab) {
+      saveRedirectMarker(currentTab);
+    } else {
+      getTab(saveRedirectMarker);
+    }
+  }
+
+  function listenForPsaLinks() {
+    let currentTab = null;
+    getTab((tab) => {
+      currentTab = tab;
+    });
+
+    document.addEventListener('click', (event) => {
+      rememberPsaNavigation(event, currentTab);
+    }, true);
+  }
+
+  function getCurrentUrl() {
+    const url = new URL(window.location.href);
+    const filteredParams = new URLSearchParams();
+
+    for (const [key, value] of url.searchParams) {
+      if (key.toLowerCase() === 'src' && value.toUpperCase() === 'PSA') continue;
+      filteredParams.append(key, value);
+    }
+
+    url.search = filteredParams.toString();
     return url.href;
   }
 
@@ -103,7 +173,10 @@
   }
 
   function addStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+
     const style = document.createElement('style');
+    style.id = STYLE_ID;
     style.textContent = `
       #${PANEL_ID} {
         position: fixed;
@@ -155,6 +228,49 @@
     (document.head || document.documentElement).appendChild(style);
   }
 
+  function removePanel() {
+    document.getElementById(PANEL_ID)?.remove();
+    document.getElementById(STYLE_ID)?.remove();
+  }
+
+  function watchForSameDocumentNavigation() {
+    const renderedUrl = window.location.href;
+    let dismissed = false;
+
+    function dismissIfLocationChanged() {
+      if (window.location.href === renderedUrl || dismissed) return;
+      dismissed = true;
+      removePanel();
+    }
+
+    window.addEventListener('popstate', dismissIfLocationChanged);
+    window.addEventListener('hashchange', dismissIfLocationChanged);
+    document.addEventListener('click', (event) => {
+      if (!(event.target instanceof Element) || event.target.closest(`#${PANEL_ID}`)) return;
+
+      const anchor = event.target.closest('a[href]');
+      if (
+        !anchor ||
+        anchor.target === '_blank' ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) return;
+      removePanel();
+    }, true);
+    document.addEventListener('submit', (event) => {
+      if (event.target instanceof HTMLFormElement && event.target.target !== '_blank') removePanel();
+    }, true);
+
+    if (window.navigation && typeof window.navigation.addEventListener === 'function') {
+      window.navigation.addEventListener('navigate', (event) => {
+        if (event.destination?.url === renderedUrl) return;
+        setTimeout(dismissIfLocationChanged, 0);
+      });
+    }
+  }
+
   function render() {
     if (document.getElementById(PANEL_ID)) return;
 
@@ -178,7 +294,33 @@
 
     addStyles();
     document.documentElement.appendChild(panel);
+    watchForSameDocumentNavigation();
   }
 
-  render();
+  function initializeRedirectPage() {
+    const cameFromPsa = isPsaUrl(document.referrer);
+
+    getTab((tab) => {
+      const marker = tab?.[TAB_STATE_KEY];
+      const wasClickedFromPsa = Boolean(
+        marker &&
+        marker.expiresAt > Date.now() &&
+        isPsaUrl(marker.source)
+      );
+
+      if (marker && tab) {
+        delete tab[TAB_STATE_KEY];
+        saveTab(tab);
+      }
+
+      if (cameFromPsa || wasClickedFromPsa) render();
+    });
+  }
+
+  if (isPsaHostname(window.location.hostname)) {
+    listenForPsaLinks();
+    return;
+  }
+
+  initializeRedirectPage();
 })();
